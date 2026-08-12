@@ -28,7 +28,42 @@ omp-gym train     LoRA on the Apple silicon GPU through mlx-lm,
    |              gated by a fail-fast Metal preflight
    v
 adapters/         adapter weights + train_report.json
+   |
+   v
+omp-gym serve     publishes the adapter as omp model
+   |              `omp-gym/<base-model>` through mlx-lm + a shim
+   v
+omp-gym bench     the tuned policy runs episodes and lands on the
+                  same leaderboard as the API models
 ```
+
+## Serve: the tuned model becomes the agent
+
+`serve` closes the loop. It starts an mlx-lm server on the Metal
+GPU with the adapter applied, registers an omp provider entry in
+`~/.omp/agent/models.yml` (only when omp-gym owns that file), and
+fronts the server with a small shim:
+
+```sh
+uv run omp-gym serve --adapter adapters/v3 --port 8800
+# then, in another terminal:
+uv run omp-gym run --task tasks/fizzbuzz-fix \
+  --model "omp-gym/mlx-community/Qwen2.5-3B-Instruct-4bit"
+```
+
+The shim exists because the mlx-lm server (0.32) swallows tool
+calls: with a `tools` parameter it returns neither content nor
+`tool_calls`. The shim strips `tools` from the request, describes
+the tools in the system message, and parses the model's text into
+real OpenAI tool calls. Three envelopes are accepted: the trained
+`<tool_call>` block, a fenced ```json block, and a bare JSON
+object.
+
+Verified on this machine: the v3 adapter, served locally, drove a
+real omp tool call (grep with omp's intent argument) inside a
+scored episode, and benched 0% at $0.0000 across three tasks with
+3 tool calls. It does not solve tasks yet — a 3B model trained on
+104 trajectories starts the loop, it does not win it.
 
 ## Per-turn samples
 

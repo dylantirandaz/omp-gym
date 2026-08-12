@@ -111,11 +111,46 @@ def _cmd_bench(
     return 0
 
 
+def _cmd_serve(
+    adapter_dir: Path,
+    base_model: str,
+    port: int,
+    model_id: str,
+    models_yml: Path,
+) -> int:
+    from .serve import run_server
+
+    return run_server(
+        base_model=base_model,
+        adapter_dir=adapter_dir,
+        port=port,
+        model_id=model_id,
+        models_yml=models_yml,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="omp-gym")
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("preflight", help="verify the Metal GPU")
+
+    serve_parser = commands.add_parser(
+        "serve", help="serve an adapter as an omp provider"
+    )
+    serve_parser.add_argument(
+        "--adapter", type=Path, default=Path("adapters/v3")
+    )
+    serve_parser.add_argument(
+        "--base-model", default="mlx-community/Qwen2.5-3B-Instruct-4bit"
+    )
+    serve_parser.add_argument("--port", type=int, default=8800)
+    serve_parser.add_argument("--model-id", default="local-v3")
+    serve_parser.add_argument(
+        "--models-yml",
+        type=Path,
+        default=Path.home() / ".omp" / "agent" / "models.yml",
+    )
 
     run_parser = commands.add_parser("run", help="run one episode")
     run_parser.add_argument("--task", type=Path, required=True)
@@ -207,6 +242,16 @@ def main() -> None:
                 args.trials,
                 args.runs,
                 args.report,
+            )
+        )
+    if args.command == "serve":
+        raise SystemExit(
+            _cmd_serve(
+                args.adapter,
+                args.base_model,
+                args.port,
+                args.model_id,
+                args.models_yml,
             )
         )
     raise AssertionError(f"unhandled command: {args.command}")

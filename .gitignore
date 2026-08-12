@@ -6,3 +6,4 @@ dataset/
 adapters/
 __pycache__/
 *.egg-info/
+bench-local.*
