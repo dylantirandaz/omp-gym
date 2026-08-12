@@ -51,9 +51,14 @@ Step = AssistantStep | ToolResultStep | UserStep
 
 @dataclass(frozen=True)
 class Trajectory:
-    """The ordered steps of one session."""
+    """The ordered steps of one session.
+
+    torn_lines counts lines that were not valid JSON. A live session
+    file can end with one torn line while omp still writes to it.
+    """
 
     steps: tuple[Step, ...]
+    torn_lines: int
 
 
 def _block_texts(content: object) -> str:
@@ -97,10 +102,15 @@ def _parse_assistant(message: dict[str, object]) -> AssistantStep:
 def parse_session(session_file: Path) -> Trajectory:
     """Read one session file and return its steps in order."""
     steps: list[Step] = []
+    torn_lines = 0
     for line in session_file.read_text().splitlines():
         if not line.strip():
             continue
-        entry = json.loads(line)
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            torn_lines += 1
+            continue
         if entry.get("type") != "message":
             continue
         message = entry.get("message")
@@ -120,4 +130,4 @@ def parse_session(session_file: Path) -> Trajectory:
             )
         elif role == "user":
             steps.append(UserStep(text=_block_texts(message.get("content"))))
-    return Trajectory(steps=tuple(steps))
+    return Trajectory(steps=tuple(steps), torn_lines=torn_lines)

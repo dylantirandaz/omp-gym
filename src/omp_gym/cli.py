@@ -36,11 +36,16 @@ def _cmd_run(task_dir: Path, runs_dir: Path, model: str | None) -> int:
     return 0
 
 
-def _cmd_export(runs_dir: Path, out_dir: Path, min_reward: float) -> int:
-    stats = export_dataset(runs_dir, out_dir, min_reward)
+def _cmd_export(
+    runs_dir: Path,
+    sessions_root: Path,
+    out_dir: Path,
+    min_reward: float,
+) -> int:
+    stats = export_dataset(runs_dir, sessions_root, out_dir, min_reward)
     print(json.dumps(asdict(stats), indent=2))
-    if stats.episodes_exported == 0:
-        print("no episodes reached the reward threshold", file=sys.stderr)
+    if stats.train_documents == 0:
+        print("no trainable documents were found", file=sys.stderr)
         return 1
     return 0
 
@@ -81,6 +86,12 @@ def main() -> None:
     export_parser.add_argument("--runs", type=Path, default=Path("runs"))
     export_parser.add_argument("--out", type=Path, default=Path("dataset"))
     export_parser.add_argument("--min-reward", type=float, default=1.0)
+    export_parser.add_argument(
+        "--sessions",
+        type=Path,
+        default=Path.home() / ".omp" / "agent" / "sessions",
+        help="omp sessions root; every session below it is harvested",
+    )
 
     train_parser = commands.add_parser("train", help="train a LoRA adapter")
     train_parser.add_argument("--data", type=Path, default=Path("dataset"))
@@ -100,7 +111,9 @@ def main() -> None:
     if args.command == "run":
         raise SystemExit(_cmd_run(args.task, args.runs, args.model))
     if args.command == "export":
-        raise SystemExit(_cmd_export(args.runs, args.out, args.min_reward))
+        raise SystemExit(
+            _cmd_export(args.runs, args.sessions, args.out, args.min_reward)
+        )
     if args.command == "train":
         raise SystemExit(
             _cmd_train(
