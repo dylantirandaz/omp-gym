@@ -71,6 +71,7 @@ def run_training(
         str(max_seq_length),
         "--steps-per-report",
         "1",
+        "--mask-prompt",
     ]
     print("+", " ".join(command))
     process = subprocess.Popen(
@@ -80,9 +81,12 @@ def run_training(
         text=True,
     )
     losses: list[float] = []
+    nan_lines = 0
     assert process.stdout is not None
     for line in process.stdout:
         print(line, end="")
+        if "loss nan" in line.lower():
+            nan_lines += 1
         found = _LOSS_PATTERN.search(line)
         if found:
             losses.append(float(found.group(1)))
@@ -92,6 +96,11 @@ def run_training(
         raise TrainError(f"mlx_lm lora exited with {exit_code}")
     if len(losses) < 2:
         raise TrainError("no loss reports found in training output")
+    if nan_lines:
+        raise TrainError(
+            f"{nan_lines} loss reports were NaN; "
+            "a sample lost its completion to truncation"
+        )
     if losses[-1] >= losses[0]:
         raise TrainError(
             f"train loss did not go down: {losses[0]} -> {losses[-1]}"

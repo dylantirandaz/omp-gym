@@ -19,7 +19,7 @@ omp-gym run       runs a real omp session on the task workspace,
    v
 runs/             episode = session.jsonl + episode.json + logs
 
-omp-gym export    two sources -> chat-format train/valid JSONL:
+omp-gym export    two sources -> per-turn train/valid samples:
    |              1. scored episodes under runs/, filtered by reward
    |              2. every omp session under the sessions root,
    |                 past and current, with no filter
@@ -29,6 +29,22 @@ omp-gym train     LoRA on the Apple silicon GPU through mlx-lm,
    v
 adapters/         adapter weights + train_report.json
 ```
+
+## Per-turn samples
+
+Long agent sessions do not fit a training window, and head
+truncation teaches nothing but opening moves. The exporter makes
+one sample per assistant turn instead:
+
+- system prompt, the most recent context that fits the token
+  budget, then the assistant turn as the final message;
+- the budget is measured with the trainee's own tokenizer, message
+  costs cached, so no sample can lose its completion to truncation;
+- training passes `--mask-prompt`, so loss lands only on the final
+  assistant message — never on tool output or user text;
+- the train/valid split holds out whole trajectories, so no session
+  leaks into both files;
+- the trainer hard-fails when any loss report is NaN.
 
 ## Quickstart
 
@@ -40,25 +56,16 @@ uv sync
 uv run omp-gym preflight                      # verify the Metal GPU
 uv run omp-gym run --task tasks/fizzbuzz-fix  # one scored episode
 uv run omp-gym export                         # episodes + all sessions
-uv run omp-gym train --data dataset --iters 100 \
-  --adapter adapters/v2 --max-seq-length 2048
+uv run omp-gym train --data dataset \
+  --model mlx-community/Qwen2.5-3B-Instruct-4bit \
+  --iters 200 --adapter adapters/v3 --max-seq-length 2048
 ```
 
 `export` harvests every session below `~/.omp/agent/sessions` by
-default. Point `--sessions` at a different root when needed. Run
-`export` again at any time; it sweeps everything on disk, so new
-sessions enter the next dataset.
-
-Compare the base model with the tuned model:
-
-```sh
-uv run python -m mlx_lm generate \
-  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
-  --adapter-path adapters/v2 \
-  --system-prompt "$(uv run python -c 'from omp_gym.export import SYSTEM_PROMPT; print(SYSTEM_PROMPT)')" \
-  --prompt "The test file test_parser.py fails. Fix parser.py." \
-  --max-tokens 80
-```
+default; `--sessions` overrides the root. `--tokenizer` and
+`--max-tokens` must match the trainee family and the training
+sequence cap. Run `export` again at any time; it sweeps everything
+on disk, so new sessions enter the next dataset.
 
 ## Tasks
 
@@ -78,13 +85,19 @@ everything else gives 0.0.
 
 - Device: Apple M3, Metal backend through MLX, 12124 MiB.
 - Two scored episodes with the default omp model, both reward 1.0.
-- Harvest: 109 sessions seen, 107 trainable, 0 torn lines;
-  together with the episodes: 99 train + 10 valid documents, 38 MB.
-- LoRA on Qwen2.5-0.5B-Instruct-4bit, 100 iterations, sequence cap
-  2048: train loss 2.997 -> 0.1, peak memory 6.6 GB, 6.4 minutes.
-- Behavior check: the base model refuses to act; the tuned model
-  answers a new task with one well-formed `<tool_call>` block and
-  stops at the turn boundary.
+- Harvest: 109 sessions seen, 104 trajectories exported,
+  21952 turn samples (19753 train / 2199 valid), 346 oversize
+  turns skipped, 0 torn lines. Export takes 26 seconds.
+- Independent check: worst sample is 1978 template tokens against
+  the 2048 cap.
+- LoRA on Qwen2.5-3B-Instruct-4bit, 200 iterations, sequence cap
+  2048: train loss 2.058 -> 1.404, val loss 2.151 -> 2.001 on
+  held-out sessions, zero NaN reports, peak memory 11.5 GB,
+  42 minutes.
+- Behavior check on a fresh bug report: the base model invents a
+  fake edit API and writes fabricated content without reading
+  anything; the tuned model emits one well-formed `<tool_call>`
+  that reads a line range around the failing line, then stops.
 
 ## What the harvest means
 
@@ -102,7 +115,7 @@ everything else gives 0.0.
 - SFT only. Low-reward episodes are dropped, not used as negatives.
 - Thinking blocks are not exported.
 - Tool results are cut at 4000 characters in the export.
-- Documents longer than the sequence cap train only on their head.
+- Turns whose bare sample exceeds the token budget are skipped.
 
 ## Next steps
 

@@ -1,4 +1,4 @@
-"""Export trajectories as chat-format training data.
+"""Export trajectories as per-turn chat training samples.
 
 Two sources feed the dataset:
 
@@ -8,17 +8,22 @@ Two sources feed the dataset:
    These have no test, so no reward exists and no filter applies.
    Failed work in a session trains the model too.
 
-Output: one JSON document per trajectory, shape {"messages": [...]}.
+Each assistant turn becomes one sample: the system prompt, the most
+recent context that fits the token budget, then the assistant turn
+as the final message. The budget is measured with the trainee's own
+tokenizer and chat template, so no sample can lose its completion
+to truncation during training. Train with prompt masking so that
+only the final assistant message produces loss.
+
 Tool calls are rendered as <tool_call> JSON blocks inside assistant
 content. Tool results are rendered as <tool_response> blocks inside
-user content. This rendering works with every chat template.
-Thinking blocks are not exported. Trajectories without one
-assistant step are skipped because they cannot train anything.
+user content. Thinking blocks are not exported.
 """
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from .trajectory import (
     AssistantStep,
@@ -37,6 +42,27 @@ SYSTEM_PROMPT = (
 )
 
 TOOL_RESULT_LIMIT = 4000
+TOKEN_SAFETY_MARGIN = 64
+MESSAGE_OVERHEAD_TOKENS = 8
+VALID_TRAJECTORY_SHARE = 10
+
+
+class TextTokenCounter(Protocol):
+    """Counts plain content tokens for one message body."""
+
+    def __call__(self, text: str) -> int: ...
+
+
+def load_token_counter(tokenizer_id: str) -> TextTokenCounter:
+    """Load the trainee tokenizer and return a content token counter."""
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_id)
+
+    def count(text: str) -> int:
+        return len(tokenizer(text, add_special_tokens=False).input_ids)
+
+    return count
 
 
 @dataclass(frozen=True)
@@ -44,19 +70,20 @@ class ExportStats:
     """What the export run produced."""
 
     episodes_seen: int
-    episodes_exported: int
     sessions_seen: int
-    sessions_exported: int
+    trajectories_exported: int
+    turns_exported: int
+    turns_skipped_oversize: int
     torn_lines: int
-    train_documents: int
-    valid_documents: int
+    train_samples: int
+    valid_samples: int
 
 
-def _render_document(
+def _render_messages(
     trajectory: Trajectory,
     prompt: str | None,
 ) -> list[dict[str, str]]:
-    """Render one trajectory as alternating chat messages.
+    """Render one trajectory as merged chat messages.
 
     Scored episodes pass their task prompt. Harvested sessions pass
     None because their first user step already is the prompt.
@@ -108,19 +135,61 @@ def _render_document(
     return merged
 
 
-def _trainable(trajectory: Trajectory) -> bool:
-    """A trajectory trains something only with one assistant step."""
-    return any(
-        isinstance(step, AssistantStep) for step in trajectory.steps
-    )
+@dataclass(frozen=True)
+class TurnSplit:
+    """Per-turn samples of one trajectory, with skip count."""
+
+    samples: tuple[str, ...]
+    skipped_oversize: int
 
 
-def _collect_episodes(
+def _split_turns(
+    messages: list[dict[str, str]],
+    count_tokens: TextTokenCounter,
+    token_cap: int,
+) -> TurnSplit:
+    """Make one sample per assistant turn with tail-window context.
+
+    The sample keeps the system prompt, then as many of the most
+    recent context messages as the token budget allows, then the
+    assistant turn as the final message. Costs are measured once
+    per message: content tokens plus a fixed template overhead that
+    overestimates the real chat template, so a sample never loses
+    its completion to truncation. A turn whose bare sample (system
+    plus turn) does not fit the budget is skipped.
+    """
+    if not messages or messages[0]["role"] != "system":
+        raise AssertionError("rendered messages must start with system")
+    costs = [
+        count_tokens(message["content"]) + MESSAGE_OVERHEAD_TOKENS
+        for message in messages
+    ]
+    budget = token_cap - TOKEN_SAFETY_MARGIN
+    samples: list[str] = []
+    skipped = 0
+    for index in range(1, len(messages)):
+        turn = messages[index]
+        if turn["role"] != "assistant":
+            continue
+        used = costs[0] + costs[index]
+        if used > budget:
+            skipped += 1
+            continue
+        start = index
+        while start > 1 and used + costs[start - 1] <= budget:
+            start -= 1
+            used += costs[start]
+        sample = [messages[0], *messages[start:index], turn]
+        samples.append(json.dumps({"messages": sample}))
+    return TurnSplit(samples=tuple(samples), skipped_oversize=skipped)
+
+
+def _collect_episode_messages(
     runs_dir: Path,
     min_reward: float,
-) -> tuple[list[str], int, int]:
-    """Collect documents from scored episodes: (docs, seen, torn)."""
-    documents: list[str] = []
+) -> tuple[list[list[dict[str, str]]], int, int]:
+    """Render scored episodes: (rendered, seen, torn)."""
+    rendered: list[list[dict[str, str]]] = []
     seen = 0
     torn = 0
     for episode_file in sorted(runs_dir.glob("*/episode.json")):
@@ -130,35 +199,29 @@ def _collect_episodes(
             continue
         trajectory = parse_session(Path(record["session_file"]))
         torn += trajectory.torn_lines
-        if not _trainable(trajectory):
-            continue
         prompt_file = Path(record["episode_dir"]) / "prompt.txt"
         prompt = (
             prompt_file.read_text().strip()
             if prompt_file.is_file()
             else "Complete the task in this repository."
         )
-        rendered = _render_document(trajectory, prompt)
-        documents.append(json.dumps({"messages": rendered}))
-    return documents, seen, torn
+        rendered.append(_render_messages(trajectory, prompt))
+    return rendered, seen, torn
 
 
-def _collect_sessions(
+def _collect_session_messages(
     sessions_root: Path,
-) -> tuple[list[str], int, int]:
-    """Collect documents from all omp sessions: (docs, seen, torn)."""
-    documents: list[str] = []
+) -> tuple[list[list[dict[str, str]]], int, int]:
+    """Render all omp sessions: (rendered, seen, torn)."""
+    rendered: list[list[dict[str, str]]] = []
     seen = 0
     torn = 0
     for session_file in sorted(sessions_root.rglob("*.jsonl")):
         seen += 1
         trajectory = parse_session(session_file)
         torn += trajectory.torn_lines
-        if not _trainable(trajectory):
-            continue
-        rendered = _render_document(trajectory, prompt=None)
-        documents.append(json.dumps({"messages": rendered}))
-    return documents, seen, torn
+        rendered.append(_render_messages(trajectory, prompt=None))
+    return rendered, seen, torn
 
 
 def export_dataset(
@@ -166,50 +229,83 @@ def export_dataset(
     sessions_root: Path,
     out_dir: Path,
     min_reward: float,
+    tokenizer_id: str,
+    token_cap: int,
 ) -> ExportStats:
-    """Collect both sources and write train/valid JSONL files."""
-    episode_docs, episodes_seen, episode_torn = _collect_episodes(
+    """Collect both sources and write per-turn train/valid files.
+
+    The train/valid split separates whole trajectories so that no
+    session contributes samples to both files. The valid set takes
+    the smallest trajectories until it holds about one tenth of the
+    samples.
+    """
+    count_tokens = load_token_counter(tokenizer_id)
+    episode_msgs, episodes_seen, episode_torn = _collect_episode_messages(
         runs_dir, min_reward
     )
     if sessions_root.is_dir():
-        session_docs, sessions_seen, session_torn = _collect_sessions(
-            sessions_root
+        session_msgs, sessions_seen, session_torn = (
+            _collect_session_messages(sessions_root)
         )
     else:
         print(f"note: sessions root {sessions_root} does not exist")
-        session_docs, sessions_seen, session_torn = [], 0, 0
+        session_msgs, sessions_seen, session_torn = [], 0, 0
 
-    documents = episode_docs + session_docs
+    splits = [
+        _split_turns(messages, count_tokens, token_cap)
+        for messages in episode_msgs + session_msgs
+    ]
+    splits = [split for split in splits if split.samples]
+    skipped = sum(split.skipped_oversize for split in splits)
+
     out_dir.mkdir(parents=True, exist_ok=True)
-    if not documents:
+    if not splits:
         (out_dir / "train.jsonl").write_text("")
         (out_dir / "valid.jsonl").write_text("")
         return ExportStats(
             episodes_seen=episodes_seen,
-            episodes_exported=0,
             sessions_seen=sessions_seen,
-            sessions_exported=0,
+            trajectories_exported=0,
+            turns_exported=0,
+            turns_skipped_oversize=skipped,
             torn_lines=episode_torn + session_torn,
-            train_documents=0,
-            valid_documents=0,
+            train_samples=0,
+            valid_samples=0,
         )
 
-    if len(documents) == 1:
-        train, valid = documents, documents
-        print("warning: one document only; valid set repeats the train set")
+    if len(splits) == 1:
+        train_splits, valid_splits = list(splits), list(splits)
+        print(
+            "warning: one trajectory only; "
+            "valid set repeats the train set"
+        )
     else:
-        valid_size = max(1, len(documents) // 10)
-        train = documents[:-valid_size]
-        valid = documents[-valid_size:]
+        total_samples = sum(len(split.samples) for split in splits)
+        valid_budget = max(1, total_samples // VALID_TRAJECTORY_SHARE)
+        ordered = sorted(splits, key=lambda split: len(split.samples))
+        valid_splits = []
+        valid_taken = 0
+        for split in ordered:
+            if valid_taken >= valid_budget:
+                break
+            valid_splits.append(split)
+            valid_taken += len(split.samples)
+        held_out = {id(split) for split in valid_splits}
+        train_splits = [
+            split for split in splits if id(split) not in held_out
+        ]
 
+    train = [sample for split in train_splits for sample in split.samples]
+    valid = [sample for split in valid_splits for sample in split.samples]
     (out_dir / "train.jsonl").write_text("\n".join(train) + "\n")
     (out_dir / "valid.jsonl").write_text("\n".join(valid) + "\n")
     return ExportStats(
         episodes_seen=episodes_seen,
-        episodes_exported=len(episode_docs),
         sessions_seen=sessions_seen,
-        sessions_exported=len(session_docs),
+        trajectories_exported=len(splits),
+        turns_exported=len(train) + len(valid),
+        turns_skipped_oversize=skipped,
         torn_lines=episode_torn + session_torn,
-        train_documents=len(train),
-        valid_documents=len(valid),
+        train_samples=len(train),
+        valid_samples=len(valid),
     )

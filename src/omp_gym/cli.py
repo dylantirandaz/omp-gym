@@ -41,11 +41,20 @@ def _cmd_export(
     sessions_root: Path,
     out_dir: Path,
     min_reward: float,
+    tokenizer_id: str,
+    token_cap: int,
 ) -> int:
-    stats = export_dataset(runs_dir, sessions_root, out_dir, min_reward)
+    stats = export_dataset(
+        runs_dir,
+        sessions_root,
+        out_dir,
+        min_reward,
+        tokenizer_id,
+        token_cap,
+    )
     print(json.dumps(asdict(stats), indent=2))
-    if stats.train_documents == 0:
-        print("no trainable documents were found", file=sys.stderr)
+    if stats.train_samples == 0:
+        print("no trainable samples were found", file=sys.stderr)
         return 1
     return 0
 
@@ -92,6 +101,18 @@ def main() -> None:
         default=Path.home() / ".omp" / "agent" / "sessions",
         help="omp sessions root; every session below it is harvested",
     )
+    export_parser.add_argument(
+        "--tokenizer",
+        default="mlx-community/Qwen2.5-3B-Instruct-4bit",
+        help="tokenizer that measures the sample token budget; "
+        "must match the trainee model family",
+    )
+    export_parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=2048,
+        help="sample token cap; must match the training sequence cap",
+    )
 
     train_parser = commands.add_parser("train", help="train a LoRA adapter")
     train_parser.add_argument("--data", type=Path, default=Path("dataset"))
@@ -112,7 +133,14 @@ def main() -> None:
         raise SystemExit(_cmd_run(args.task, args.runs, args.model))
     if args.command == "export":
         raise SystemExit(
-            _cmd_export(args.runs, args.sessions, args.out, args.min_reward)
+            _cmd_export(
+                args.runs,
+                args.sessions,
+                args.out,
+                args.min_reward,
+                args.tokenizer,
+                args.max_tokens,
+            )
         )
     if args.command == "train":
         raise SystemExit(
