@@ -94,6 +94,13 @@ uv run omp-gym bench \
   --tasks tasks --trials 1 --report bench-report.md
 ```
 
+Provider keys live in a gitignored `.env` file at the project
+root (`KEY=VALUE` lines). omp-gym loads it for every omp session
+it starts, and its values override the shell environment. Put
+`OPENROUTER_API_KEY=...` there and OpenRouter models join the
+grid: `--models "openrouter/qwen/qwen3-coder,claude-haiku-4-5"`.
+A malformed line stops the run with its file and line number.
+
 Provider errors (bad model id, no access, dead key) do not count
 as failed tasks. They appear in an errors column, as `E` cells in
 the task matrix, and as a list with the recorded error message.

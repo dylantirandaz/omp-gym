@@ -12,6 +12,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .envfile import load_env_file
 from .task import TaskSpec
 
 
@@ -91,7 +92,7 @@ def run_episode(
         capture_output=True,
         text=True,
         timeout=int(task.max_time) + 120,
-        env=os.environ.copy(),
+        env={**os.environ, **load_env_file(Path(".env"))},
     )
     duration = time.monotonic() - started
     (episode_dir / "events.jsonl").write_text(omp_run.stdout)
