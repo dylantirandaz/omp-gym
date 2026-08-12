@@ -1,0 +1,6 @@
+prompt = """
+The test file test_fizzbuzz.py fails. Find the bug in fizzbuzz.py and
+fix it. Do not change the test file. Run `python3 test_fizzbuzz.py`
+to confirm that all tests pass.
+"""
+test_command = ["python3", "test_fizzbuzz.py"]
