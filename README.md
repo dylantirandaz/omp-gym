@@ -81,10 +81,44 @@ The runner copies the workspace, so tasks stay reproducible. The
 test command is the reward function: exit 0 gives reward 1.0,
 everything else gives 0.0.
 
+## Benchmark
+
+`bench` runs every model on every task under identical conditions:
+a fresh workspace copy, one real omp session, then the tests. The
+session file supplies tokens and cost, so the leaderboard shows
+what a pass rate costs.
+
+```sh
+uv run omp-gym bench \
+  --models "claude-haiku-4-5,claude-sonnet-4-6,cerebras/gpt-oss-120b" \
+  --tasks tasks --trials 1 --report bench-report.md
+```
+
+Provider errors (bad model id, no access, dead key) do not count
+as failed tasks. They appear in an errors column, as `E` cells in
+the task matrix, and as a list with the recorded error message.
+
+Real result from this machine, 9 episodes in 154 seconds:
+
+| model | pass rate | mean seconds | mean tokens | total cost usd |
+| --- | --- | --- | --- | --- |
+| cerebras/gpt-oss-120b | 100% (3 runs) | 7.0 | 83653 | 0.0189 |
+| claude-haiku-4-5 | 100% (3 runs) | 17.6 | 61523 | 0.0744 |
+| claude-sonnet-4-6 | 100% (3 runs) | 26.5 | 62567 | 0.2097 |
+
+Three simple tasks cannot separate these models on capability; they
+separate them on speed and price. Add harder tasks to spread the
+pass-rate column. Benchmark episodes land in `runs/` like every
+other episode, so winners feed the next training export.
+
+
 ## Verified on this machine
 
 - Device: Apple M3, Metal backend through MLX, 12124 MiB.
 - Two scored episodes with the default omp model, both reward 1.0.
+- Benchmark: 3 models x 3 tasks, 9/9 episodes scored, provider
+  errors separated from task failures (verified against a real
+  404 model id).
 - Harvest: 109 sessions seen, 104 trajectories exported,
   21952 turn samples (19753 train / 2199 valid), 346 oversize
   turns skipped, 0 torn lines. Export takes 26 seconds.

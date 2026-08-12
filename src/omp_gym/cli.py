@@ -6,6 +6,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from .bench import load_task_suite, render_report, run_benchmark
 from .export import export_dataset
 from .preflight import require_metal_gpu
 from .runner import EpisodeFailure, run_episode
@@ -80,6 +81,36 @@ def _cmd_train(
     return 0
 
 
+def _cmd_bench(
+    models_arg: str,
+    tasks_dir: Path,
+    trials: int,
+    runs_dir: Path,
+    report_path: Path,
+) -> int:
+    models = [name.strip() for name in models_arg.split(",") if name.strip()]
+    if not models:
+        print("no models given", file=sys.stderr)
+        return 1
+    suite = load_task_suite(tasks_dir)
+    if isinstance(suite, TaskLoadError):
+        print(f"bad task {suite.path}: {suite.reason}", file=sys.stderr)
+        return 1
+    if not suite:
+        print(f"no tasks found in {tasks_dir}", file=sys.stderr)
+        return 1
+    rows = run_benchmark(models, suite, trials, runs_dir)
+    report = render_report(rows)
+    report_path.write_text(report)
+    rows_path = report_path.with_suffix(".jsonl")
+    rows_path.write_text(
+        "\n".join(json.dumps(asdict(row)) for row in rows) + "\n"
+    )
+    print(report)
+    print(f"report: {report_path}\nrows: {rows_path}")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="omp-gym")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -126,6 +157,21 @@ def main() -> None:
     train_parser.add_argument("--batch-size", type=int, default=1)
     train_parser.add_argument("--max-seq-length", type=int, default=4096)
 
+    bench_parser = commands.add_parser(
+        "bench", help="benchmark models on the task suite"
+    )
+    bench_parser.add_argument(
+        "--models",
+        required=True,
+        help="comma-separated omp model names",
+    )
+    bench_parser.add_argument("--tasks", type=Path, default=Path("tasks"))
+    bench_parser.add_argument("--trials", type=int, default=1)
+    bench_parser.add_argument("--runs", type=Path, default=Path("runs"))
+    bench_parser.add_argument(
+        "--report", type=Path, default=Path("bench-report.md")
+    )
+
     args = parser.parse_args()
     if args.command == "preflight":
         raise SystemExit(_cmd_preflight())
@@ -151,6 +197,16 @@ def main() -> None:
                 args.adapter,
                 args.batch_size,
                 args.max_seq_length,
+            )
+        )
+    if args.command == "bench":
+        raise SystemExit(
+            _cmd_bench(
+                args.models,
+                args.tasks,
+                args.trials,
+                args.runs,
+                args.report,
             )
         )
     raise AssertionError(f"unhandled command: {args.command}")

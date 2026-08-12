@@ -1,5 +1,6 @@
 .venv/
 runs/
+bench-report.*
 dataset/
 adapters/
 __pycache__/
