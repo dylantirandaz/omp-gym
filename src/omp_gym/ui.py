@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .ledger import DEFAULT_LEDGER, read_ledger
+from .ledger import read_ledger
 from .report import _model_stats
 from .trajectory import AssistantStep, ToolResultStep, UserStep, parse_session
 
