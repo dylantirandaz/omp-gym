@@ -10,6 +10,28 @@ behavior.
 
 ## The loop
 
+## The platform
+
+Seven verbs plus a dashboard, all feeding one ledger:
+
+- `run` / `bench` — scored episodes and model x task grids.
+- `export` — SFT samples, or DPO pairs with `--pairs`.
+- `train` — SFT through mlx-lm; DPO through mlx-lm-lora with
+  `--method dpo --resume-adapter` (the SFT-then-DPO chain).
+- `serve` — adapters become omp providers behind a tool-call shim.
+- `report` — adapters and models compared from the ledger: val
+  loss, pass rate, cost per pass, tokens per solve.
+- `improve --goal "..." --budget N` — hands a research goal to an
+  omp operator agent with the ledger as memory and a hard clock.
+- `ui --port 8900` — web dashboard: leaderboard, adapters,
+  timeline, episode browser with full transcripts.
+
+Everything writes one JSON line per action to
+`experiments/ledger.jsonl` (gitignored). The report, the
+dashboard, and the operator all read the same ledger.
+
+## The loop
+
 ```
 tasks/            one task = prompt + workspace + test command
    |

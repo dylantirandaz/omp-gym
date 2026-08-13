@@ -1,0 +1,6 @@
+prompt = """
+Implement the function slugify in slug.py so that test_slug.py
+passes. Do not change the test file. Run `python3 test_slug.py` to
+confirm that all tests pass.
+"""
+test_command = ["python3", "test_slug.py"]

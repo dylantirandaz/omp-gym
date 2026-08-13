@@ -224,6 +224,126 @@ def _collect_session_messages(
     return rendered, seen, torn
 
 
+@dataclass(frozen=True)
+class PairStats:
+    """What the preference-pair export produced."""
+
+    tasks_seen: int
+    tasks_paired: int
+    pairs_written: int
+
+
+def _episode_qualifies_as_loss(session_file: Path) -> bool:
+    """A loss episode must be a real attempt, not a provider error.
+
+    Episodes whose assistant stopped with a provider error (bad key,
+    unknown model id) say nothing about the policy, so they never
+    become the rejected side of a pair.
+    """
+    trajectory = parse_session(session_file)
+    has_assistant = any(
+        isinstance(step, AssistantStep) for step in trajectory.steps
+    )
+    if not has_assistant:
+        return False
+    for line in session_file.read_text().splitlines():
+        if '"stopReason": "error"' in line or '"stopReason":"error"' in line:
+            return False
+    return True
+
+
+def _first_assistant_content(
+    messages: list[dict[str, str]],
+) -> str | None:
+    """Return the first assistant message content, if any."""
+    for message in messages:
+        if message["role"] == "assistant":
+            return message["content"]
+    return None
+
+
+def export_pairs(
+    runs_dir: Path,
+    out_dir: Path,
+    max_pairs_per_task: int,
+) -> PairStats:
+    """Build DPO preference pairs from scored episodes.
+
+    For each task with at least one win and one real loss, each
+    (win, loss) combination becomes one pair: the shared prompt,
+    the winner's first assistant turn as chosen, the loser's first
+    assistant turn as rejected. Later-turn pairing needs aligned
+    contexts, which diverging trajectories do not have.
+    """
+    wins: dict[str, list[tuple[str, str]]] = {}
+    losses: dict[str, list[tuple[str, str]]] = {}
+    tasks_seen: set[str] = set()
+    for episode_file in sorted(runs_dir.glob("*/episode.json")):
+        record = json.loads(episode_file.read_text())
+        task = str(record["task"])
+        tasks_seen.add(task)
+        session_file = Path(record["session_file"])
+        trajectory = parse_session(session_file)
+        prompt_file = Path(record["episode_dir"]) / "prompt.txt"
+        prompt = (
+            prompt_file.read_text().strip()
+            if prompt_file.is_file()
+            else "Complete the task in this repository."
+        )
+        first = _first_assistant_content(
+            _render_messages(trajectory, prompt)
+        )
+        if first is None:
+            continue
+        if float(record["reward"]) >= 1.0:
+            wins.setdefault(task, []).append((prompt, first))
+        elif _episode_qualifies_as_loss(session_file):
+            losses.setdefault(task, []).append((prompt, first))
+
+    documents: list[str] = []
+    tasks_paired = 0
+    for task in sorted(tasks_seen):
+        task_wins = wins.get(task, [])
+        task_losses = losses.get(task, [])
+        if not task_wins or not task_losses:
+            continue
+        tasks_paired += 1
+        written = 0
+        for prompt, chosen in task_wins:
+            for _, rejected in task_losses:
+                if written >= max_pairs_per_task:
+                    break
+                documents.append(
+                    json.dumps(
+                        {
+                            "system": SYSTEM_PROMPT,
+                            "prompt": prompt,
+                            "chosen": chosen,
+                            "rejected": rejected,
+                        }
+                    )
+                )
+                written += 1
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if len(documents) > 1:
+        valid_count = max(1, len(documents) // VALID_TRAJECTORY_SHARE)
+        train, valid = documents[:-valid_count], documents[-valid_count:]
+    else:
+        train, valid = documents, documents
+    (out_dir / "train.jsonl").write_text(
+        "\n".join(train) + ("\n" if train else "")
+    )
+    (out_dir / "valid.jsonl").write_text(
+        "\n".join(valid) + ("\n" if valid else "")
+    )
+    return PairStats(
+        tasks_seen=len(tasks_seen),
+        tasks_paired=tasks_paired,
+        pairs_written=len(documents),
+    )
+
+
 def export_dataset(
     runs_dir: Path,
     sessions_root: Path,

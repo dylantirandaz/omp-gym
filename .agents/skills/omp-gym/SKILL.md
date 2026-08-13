@@ -31,6 +31,11 @@ publishes a tuned adapter as omp model `omp-gym/<id>`, so the tuned
 model can run episodes and appear in bench like any other model.
 Serve blocks; run it as a background process.
 
+`report` compares adapters and models from the ledger. `ui --port
+8900` serves the web dashboard. Every verb appends to
+`experiments/ledger.jsonl`; read it before proposing experiments
+and never repeat what it already records.
+
 ## How to improve the model
 
 1. Add tasks under `tasks/<name>/` (task.toml + workspace where the

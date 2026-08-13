@@ -53,8 +53,14 @@ def run_episode(
     task: TaskSpec,
     runs_dir: Path,
     model: str | None,
+    extra_env: dict[str, str] | None = None,
 ) -> EpisodeRecord | EpisodeFailure:
-    """Run one real omp session on the task and score the result."""
+    """Run one real omp session on the task and score the result.
+
+    extra_env is merged into the omp child environment last, so it
+    wins over the .env file. Callers use it for per-episode routing
+    such as pointing omp at a policy server.
+    """
     stamp = time.strftime("%Y%m%d-%H%M%S")
     episode_dir = (runs_dir / f"{task.name}-{stamp}").resolve()
     workspace = episode_dir / "ws"
@@ -92,7 +98,11 @@ def run_episode(
         capture_output=True,
         text=True,
         timeout=int(task.max_time) + 120,
-        env={**os.environ, **load_env_file(Path(".env"))},
+        env={
+            **os.environ,
+            **load_env_file(Path(".env")),
+            **(extra_env if extra_env else {}),
+        },
     )
     duration = time.monotonic() - started
     (episode_dir / "events.jsonl").write_text(omp_run.stdout)
