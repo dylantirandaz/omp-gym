@@ -46,9 +46,44 @@ class MintedTask:
     task_dir: str
 
 
+def _session_cwd(session_file: Path) -> Path | None:
+    """Read the working directory recorded in the session header."""
+    for line in session_file.read_text().splitlines()[:20]:
+        if '"type": "session"' in line or '"type":"session"' in line:
+            import json as _json
+
+            try:
+                entry = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            cwd = entry.get("cwd")
+            if isinstance(cwd, str):
+                return Path(cwd)
+    return None
+
+
+def _relative_write_path(path: str, cwd: Path | None) -> str:
+    """Resolve a write path to a workspace-relative location.
+
+    Absolute paths under the session's cwd become relative to it.
+    Other absolute paths keep only their basename. Relative paths
+    pass through unchanged.
+    """
+    candidate = Path(path)
+    if candidate.is_absolute() and cwd is not None:
+        try:
+            return str(candidate.relative_to(cwd))
+        except ValueError:
+            return candidate.name
+    if candidate.is_absolute():
+        return candidate.name
+    return path
+
+
 def _scan_session(session_file: Path) -> dict | None:
     """Extract failure evidence from one session."""
     trajectory = parse_session(session_file)
+    cwd = _session_cwd(session_file)
     corrections = 0
     first_user = None
     test_command = None
@@ -72,7 +107,7 @@ def _scan_session(session_file: Path) -> dict | None:
                     path = str(call.arguments.get("path", ""))
                     content = str(call.arguments.get("content", ""))
                     if path and content and "://" not in path:
-                        writes[path] = content
+                        writes[_relative_write_path(path, cwd)] = content
         elif isinstance(step, ToolResultStep):
             if (
                 step.tool_name == "bash"
@@ -113,7 +148,8 @@ def mint_tasks(
         workspace = task_dir / "workspace"
         workspace.mkdir(parents=True, exist_ok=True)
         for path, content in evidence["writes"].items():
-            target = workspace / Path(path).name
+            target = workspace / path
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
         prompt = (
             evidence["prompt"]
@@ -121,14 +157,13 @@ def mint_tasks(
             + evidence["test_command"]
             + "` to confirm the fix.\n"
         )
-        test_target = re.search(r"(test_\S+\.py)", evidence["test_command"])
+        test_target = re.search(
+            r"(\S*test_\S+\.py)", evidence["test_command"]
+        )
         fidelity = "partial"
         if test_target is not None:
-            target_name = Path(test_target.group(1)).name
-            if any(
-                Path(path).name == target_name
-                for path in evidence["writes"]
-            ):
+            expected = test_target.group(1)
+            if expected in evidence["writes"]:
                 fidelity = "complete"
         (task_dir / "task.toml").write_text(
             f'prompt = """\n{prompt}"""\n'
