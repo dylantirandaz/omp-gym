@@ -1,242 +1,163 @@
 # omp-gym
 
-A training environment for coding models, built on the
-[omp](https://github.com/can1357/oh-my-pi) tool surface.
+omp-gym is a training and evaluation toolkit for coding agents. It
+runs the [omp](https://github.com/can1357/oh-my-pi) agent on
+test-scored tasks, records the sessions, converts them to training
+data, and fine-tunes local models on Apple silicon. Trained
+adapters are served back as omp providers, so trained models run
+and score in the same environment as API models.
 
-The idea: omp is the environment, real agent sessions are the
-dataset, and a local trainer closes the loop. The same pattern that
-Goodfire Silico applies to model internals, applied to agent
-behavior.
+## Requirements
 
-## The loop
+- macOS on Apple silicon (Metal GPU)
+- omp installed, with at least one configured model provider
+- uv
 
-## The platform
-
-Seven verbs plus a dashboard, all feeding one ledger:
-
-- `run` / `bench` — scored episodes and model x task grids.
-- `export` — SFT samples, or DPO pairs with `--pairs`.
-- `train` — SFT through mlx-lm; DPO through mlx-lm-lora with
-  `--method dpo --resume-adapter` (the SFT-then-DPO chain).
-- `serve` — adapters become omp providers behind a tool-call shim.
-- `report` — adapters and models compared from the ledger: val
-  loss, pass rate, cost per pass, tokens per solve.
-- `improve --goal "..." --budget N` — hands a research goal to an
-  omp operator agent with the ledger as memory and a hard clock.
-  Verified live: the operator refreshed the dataset, root-caused
-  the local models' 0% pass rate to 1% dataset coverage (with
-  transcript evidence), and wrote a costed next-experiment
-  proposal to its summary.
-- `ui --port 8900` — web dashboard: leaderboard, adapters,
-  timeline, episode browser with full transcripts.
-
-Everything writes one JSON line per action to
-`experiments/ledger.jsonl` (gitignored). The report, the
-dashboard, and the operator all read the same ledger.
-
-## The loop
-
-```
-tasks/            one task = prompt + workspace + test command
-   |
-   v
-omp-gym run       runs a real omp session on the task workspace,
-   |              then runs the test; the test result is the reward
-   v
-runs/             episode = session.jsonl + episode.json + logs
-
-omp-gym export    two sources -> per-turn train/valid samples:
-   |              1. scored episodes under runs/, filtered by reward
-   |              2. every omp session under the sessions root,
-   |                 past and current, with no filter
-   v
-omp-gym train     LoRA on the Apple silicon GPU through mlx-lm,
-   |              gated by a fail-fast Metal preflight
-   v
-adapters/         adapter weights + train_report.json
-   |
-   v
-omp-gym serve     publishes the adapter as omp model
-   |              `omp-gym/<base-model>` through mlx-lm + a shim
-   v
-omp-gym bench     the tuned policy runs episodes and lands on the
-                  same leaderboard as the API models
-```
-
-## Serve: the tuned model becomes the agent
-
-`serve` closes the loop. It starts an mlx-lm server on the Metal
-GPU with the adapter applied, registers an omp provider entry in
-`~/.omp/agent/models.yml` (only when omp-gym owns that file), and
-fronts the server with a small shim:
-
-```sh
-uv run omp-gym serve --adapter adapters/v3 --port 8800
-# then, in another terminal:
-uv run omp-gym run --task tasks/fizzbuzz-fix \
-  --model "omp-gym/mlx-community/Qwen2.5-3B-Instruct-4bit"
-```
-
-The shim exists because the mlx-lm server (0.32) swallows tool
-calls: with a `tools` parameter it returns neither content nor
-`tool_calls`. The shim strips `tools` from the request, describes
-the tools in the system message, and parses the model's text into
-real OpenAI tool calls. Three envelopes are accepted: the trained
-`<tool_call>` block, a fenced ```json block, and a bare JSON
-object.
-
-Verified on this machine: the v3 adapter, served locally, drove a
-real omp tool call (grep with omp's intent argument) inside a
-scored episode, and benched 0% at $0.0000 across three tasks with
-3 tool calls. It does not solve tasks yet — a 3B model trained on
-104 trajectories starts the loop, it does not win it.
-
-## Per-turn samples
-
-Long agent sessions do not fit a training window, and head
-truncation teaches nothing but opening moves. The exporter makes
-one sample per assistant turn instead:
-
-- system prompt, the most recent context that fits the token
-  budget, then the assistant turn as the final message;
-- the budget is measured with the trainee's own tokenizer, message
-  costs cached, so no sample can lose its completion to truncation;
-- training passes `--mask-prompt`, so loss lands only on the final
-  assistant message — never on tool output or user text;
-- the train/valid split holds out whole trajectories, so no session
-  leaks into both files;
-- the trainer hard-fails when any loss report is NaN.
-
-## Quickstart
-
-Requirements: `omp` on the path with a configured model, `uv`,
-Apple silicon.
+## Install
 
 ```sh
 uv sync
-uv run omp-gym preflight                      # verify the Metal GPU
-uv run omp-gym run --task tasks/fizzbuzz-fix  # one scored episode
-uv run omp-gym export                         # episodes + all sessions
-uv run omp-gym train --data dataset \
-  --model mlx-community/Qwen2.5-3B-Instruct-4bit \
-  --iters 200 --adapter adapters/v3 --max-seq-length 2048
 ```
 
-`export` harvests every session below `~/.omp/agent/sessions` by
-default; `--sessions` overrides the root. `--tokenizer` and
-`--max-tokens` must match the trainee family and the training
-sequence cap. Run `export` again at any time; it sweeps everything
-on disk, so new sessions enter the next dataset.
-
-## Tasks
-
-A task is one directory:
-
-```
-tasks/<name>/
-  task.toml        prompt, test_command, optional tools and max_time
-  workspace/       initial repository state; tests must fail here
-```
-
-The runner copies the workspace, so tasks stay reproducible. The
-test command is the reward function: exit 0 gives reward 1.0,
-everything else gives 0.0.
-
-## Benchmark
-
-`bench` runs every model on every task under identical conditions:
-a fresh workspace copy, one real omp session, then the tests. The
-session file supplies tokens and cost, so the leaderboard shows
-what a pass rate costs.
+## Quickstart
 
 ```sh
-uv run omp-gym bench \
-  --models "claude-haiku-4-5,claude-sonnet-4-6,cerebras/gpt-oss-120b" \
-  --tasks tasks --trials 1 --report bench-report.md
+uv run omp-gym preflight                      # verify the Metal GPU
+uv run omp-gym run --task tasks/fizzbuzz-fix  # one scored episode
+uv run omp-gym bench --models "claude-haiku-4-5,openrouter/moonshotai/kimi-k2" --tasks tasks
+uv run omp-gym export                         # build the dataset
+uv run omp-gym train --model mlx-community/Qwen2.5-3B-Instruct-4bit \
+  --iters 200 --adapter adapters/v3 --max-seq-length 2048
+uv run omp-gym serve --adapter adapters/v3 --port 8800
+uv run omp-gym report                         # compare adapters and models
+uv run omp-gym ui                             # dashboard on :8900
 ```
 
-Provider keys live in a gitignored `.env` file at the project
-root (`KEY=VALUE` lines). omp-gym loads it for every omp session
-it starts, and its values override the shell environment. Put
-`OPENROUTER_API_KEY=...` there and OpenRouter models join the
-grid: `--models "openrouter/qwen/qwen3-coder,claude-haiku-4-5"`.
-A malformed line stops the run with its file and line number.
+## Concepts
 
-Provider errors (bad model id, no access, dead key) do not count
-as failed tasks. They appear in an errors column, as `E` cells in
-the task matrix, and as a list with the recorded error message.
+**Task.** A directory with `task.toml` and `workspace/`. The
+workspace is a repository state where the test command fails. The
+prompt asks the agent to make the tests pass.
 
-Real result from this machine, 9 episodes in 154 seconds:
+**Episode.** One omp run on a task in a copied workspace. The test
+command scores the episode: exit 0 gives reward 1.0, any other
+exit code gives 0.0.
 
-| model | pass rate | mean seconds | mean tokens | total cost usd |
-| --- | --- | --- | --- | --- |
-| cerebras/gpt-oss-120b | 100% (3 runs) | 7.0 | 83653 | 0.0189 |
-| claude-haiku-4-5 | 100% (3 runs) | 17.6 | 61523 | 0.0744 |
-| claude-sonnet-4-6 | 100% (3 runs) | 26.5 | 62567 | 0.2097 |
+**Ledger.** `experiments/ledger.jsonl`. Every command appends one
+JSON line with its config, metrics, and artifact paths. The report
+command, the dashboard, and the operator all read this file.
 
-Three simple tasks cannot separate these models on capability; they
-separate them on speed and price. Add harder tasks to spread the
-pass-rate column. Benchmark episodes land in `runs/` like every
-other episode, so winners feed the next training export.
+**Sample.** One assistant turn with its context window, exported
+for SFT. The exporter measures tokens with the trainee tokenizer
+and never truncates the completion.
 
+**Pair.** A chosen and a rejected assistant turn for the same task
+prompt, exported for DPO. Chosen turns come from episodes with
+reward 1.0. Rejected turns come from episodes that made real
+attempts and failed. Provider errors are excluded.
 
-## Verified on this machine
+**Adapter.** LoRA weights trained on the Metal GPU. `serve`
+publishes an adapter as an omp provider, so `bench` scores it like
+an API model.
 
-- Device: Apple M3, Metal backend through MLX, 12124 MiB.
-- Two scored episodes with the default omp model, both reward 1.0.
-- Benchmark: 3 models x 3 tasks, 9/9 episodes scored, provider
-  errors separated from task failures (verified against a real
-  404 model id).
-- Harvest: 109 sessions seen, 104 trajectories exported,
-  21952 turn samples (19753 train / 2199 valid), 346 oversize
-  turns skipped, 0 torn lines. Export takes 26 seconds.
-- Independent check: worst sample is 1978 template tokens against
-  the 2048 cap.
-- LoRA on Qwen2.5-3B-Instruct-4bit, 200 iterations, sequence cap
-  2048: train loss 2.058 -> 1.404, val loss 2.151 -> 2.001 on
-  held-out sessions, zero NaN reports, peak memory 11.5 GB,
+## Commands
+
+`preflight` — verify the Metal GPU. Run before training. Exits
+nonzero when the GPU cannot run a checked operation.
+
+`run --task DIR [--model M]` — run one episode. Artifacts go to
+`runs/`.
+
+`bench --models a,b,c [--trials N] [--tasks DIR]` — run the model
+x task grid. Writes a markdown report and a JSONL row set.
+Provider errors are reported separately from task failures.
+
+`export [--pairs] [--out DIR]` — write the dataset. Default:
+per-turn SFT samples from scored episodes and from all omp
+sessions under `~/.omp/agent/sessions`. `--pairs` writes DPO
+preference pairs.
+
+`train --model M --iters N --adapter DIR [--method sft|dpo]
+[--resume-adapter FILE]` — train LoRA weights on the Metal GPU.
+`sft` uses mlx-lm. `dpo` uses a native MLX sigmoid-DPO loop and
+requires `--resume-adapter`. Training fails when the loss does not
+decrease, when a loss is NaN, or when the adapter file is not
+written.
+
+`serve --adapter DIR [--port N]` — serve an adapter behind an
+OpenAI-compatible endpoint and register it as an omp provider.
+Blocks until interrupted.
+
+`improve --goal "..." [--budget N] [--max-time S]` — run an
+operator agent that plans and executes experiments through the
+commands above. The operator writes a summary to its work
+directory.
+
+`report` — render adapter and model comparisons from the ledger.
+
+`ui [--port N]` — serve the dashboard. Read-only.
+
+## Serve, in the omp UI
+
+A served adapter appears in the omp model picker like any other
+provider:
+
+![omp model picker showing the omp-gym provider with the local
+adapter, marked free](assets/models-picker.png)
+
+The shim in front of the model server parses the model's text into
+OpenAI tool calls, because the mlx-lm server drops tool calls when
+a request carries a `tools` parameter. Three output envelopes are
+accepted: `<tool_call>` blocks, fenced ```json blocks, and bare
+JSON objects.
+
+## Provider keys
+
+Put provider keys in `.env` at the project root (`KEY=VALUE`
+lines). The file is gitignored. Every episode loads it; its values
+override the shell environment. A malformed line stops the run
+with the file and line number.
+
+## Data locations
+
+`runs/`, `dataset/`, `dataset-dpo/`, `adapters/`, `experiments/`
+and `.env` are gitignored. Session data does not leave the
+machine. The exporter and the trainer make no network calls.
+Episodes contact the configured model provider, as any omp run
+does.
+
+## Measured results
+
+Hardware: Apple M3, Metal through MLX, 12124 MiB.
+
+- Bench: 3 tasks x 7 models. Every API model passed every task.
+  kimi-k2 used the fewest tokens per solve (36,378).
+  cerebras/gpt-oss-120b was fastest (7.0 s mean) and cheapest
+  ($0.0189 for 3 tasks). The suite is too easy to rank API models
+  on capability.
+- SFT: Qwen2.5-3B-Instruct-4bit, 200 iterations, 21,952 samples.
+  Train loss 2.058 -> 1.404. Validation loss 2.151 -> 2.001.
   42 minutes.
-- Behavior check on a fresh bug report: the base model invents a
-  fake edit API and writes fabricated content without reading
-  anything; the tuned model emits one well-formed `<tool_call>`
-  that reads a line range around the failing line, then stops.
+- DPO: 26 pairs, 36 iterations. Loss 0.695 -> 0.000 in 176 s.
+  Bench after DPO matched bench before DPO: 26 pairs did not
+  change episode behavior.
+- Operator: one session refreshed the dataset, identified the
+  cause of the local models' 0% pass rate (the v3 run covered
+  about 1% of the dataset), and proposed the next experiment with
+  decision metrics.
 
-## What the harvest means
+## Limits
 
-- Every session below the sessions root becomes training data:
-  past, current, and future ones on the next export. Sessions with
-  no assistant turn are skipped because they cannot train anything.
-- Harvested sessions have no tests, so no reward exists and no
-  quality filter applies. Failed work trains the model too.
-- Everything stays on this machine. The exporter and trainer make
-  no network calls; only `omp-gym run` talks to your model provider,
-  the same as any omp use.
-
-## DPO, honestly measured
-
-- `export --pairs` builds chosen/rejected pairs from scored
-  episodes (wins versus real losses; provider errors excluded;
-  pairs over the token cap skipped).
-- Training runs a native MLX sigmoid-DPO loop (`--method dpo
-  --resume-adapter`), because the community trainer deadlocked on
-  this stack in three separate attempts. v4: loss 0.695 -> 0.000
-  and 100% preference accuracy in 176 s on the M3.
-- The bench verdict is the honest part: v4 is indistinguishable
-  from v2 at episode level (0% pass, ~300 tool calls both). The
-  mechanism works; 26 first-turn pairs are too thin to move
-  behavior. The ledger holds the full evidence chain.
-
-## Limits of this version
-
+- Harvested sessions have no quality filter. Failed work trains
+  the model too.
 - Thinking blocks are not exported.
 - Tool results are cut at 4000 characters in the export.
 - Turns whose bare sample exceeds the token budget are skipped.
 
-## Next steps
+## Prime Intellect Environments Hub
 
-- Task library: import tasks from real repositories and issues.
-- Rejection sampling: many episodes per task, keep the winners.
-- Preference pairs: reward 1.0 versus reward 0.0 episodes -> DPO.
-- Close the loop: serve the tuned model with `mlx_lm server`,
-  point omp at it as a custom provider, and measure the reward of
-  the tuned policy inside the same environment.
+`environments/omp-coding/` wraps the episode runner as a
+verifiers-compatible environment. Rollouts run real omp episodes
+against the policy endpoint that the trainer provides. To publish,
+install the Prime CLI, log in, and run `prime env push` from that
+directory.

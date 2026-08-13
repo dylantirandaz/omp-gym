@@ -1,10 +1,10 @@
 """DPO on preference pairs, natively in MLX.
 
-The community trainer deadlocked on this stack (two killed runs
-and one idle process at zero CPU), so the loss is implemented
-directly: sigmoid DPO over completion logprobs, policy versus a
-frozen reference. The reference is the SFT adapter, which makes
-this the standard SFT-then-DPO chain.
+The mlx-lm-lora community trainer deadlocked on this stack in
+three separate runs, so the loss is implemented directly: sigmoid
+DPO over completion logprobs, policy versus a frozen reference.
+The reference is the SFT adapter, which makes this the standard
+SFT-then-DPO chain.
 """
 
 import json

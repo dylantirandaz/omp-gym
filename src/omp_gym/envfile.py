@@ -1,9 +1,9 @@
 """Load provider keys from a project-local env file.
 
 The file holds KEY=VALUE lines. Blank lines and # comments are
-ignored. A leading "export " is tolerated because people paste
-shell lines. A malformed line stops the program; a silent skip
-would hide a broken key until an episode fails strangely.
+ignored. A leading "export " is accepted, so shell lines can be
+pasted directly. A malformed line stops the program with the file
+and line number; a silent skip would hide a broken key.
 """
 
 from pathlib import Path

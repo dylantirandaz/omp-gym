@@ -2,8 +2,8 @@
 
 Every verb (run, bench, train, serve, export, improve) appends one
 entry with its config, its metrics, and its artifact paths. The
-ledger is the platform's memory: the report command diffs versions
-from it, and the operator reads it to decide the next experiment.
+report command and the operator read this file to compare runs
+and to decide the next experiment.
 """
 
 import json

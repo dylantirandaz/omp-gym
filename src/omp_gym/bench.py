@@ -2,8 +2,8 @@
 
 Every model runs every task the same way: a fresh workspace copy,
 one real omp session, then the task tests. The test result is the
-score. Token and cost totals come from the session file, so a fast
-but expensive model is visible next to a slow but cheap one.
+score. Token and cost totals come from the session file, so the
+report can compare pass rate, latency, and price side by side.
 """
 
 import json

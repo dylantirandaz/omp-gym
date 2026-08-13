@@ -2,8 +2,8 @@
 
 Two views: adapters (training runs with their loss curves) and
 models (aggregated bench performance: pass rate, cost per pass,
-tokens per solve). This is the local answer to "compare
-checkpoints, measure what changed."
+tokens per solve). Use it to compare adapters and models across
+recorded runs.
 """
 
 from dataclasses import dataclass

@@ -25,8 +25,8 @@ def provider_yaml(port: int, model_id: str, base_model: str) -> str:
 
     The wire id must be the base model path: the mlx server
     resolves the request's model field as a model path, and the
-    adapter loaded at startup applies to that model. The friendly
-    model_id only names the entry.
+    adapter loaded at startup applies to that model. The model_id
+    only names the entry; it is not sent on the wire.
     """
     return (
         f"{PROVIDER_MARKER}\n"
