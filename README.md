@@ -97,6 +97,50 @@ directory.
 
 `ui [--port N]` — serve the dashboard. Read-only.
 
+`inspect --prompt "..." [--adapter DIR]` — logit-lens a local
+model: the top predicted tokens after every decoder layer. Writes
+a JSON artifact under `experiments/`.
+
+`sae [--data DIR] [--adapter DIR]` — train a tiny sparse
+autoencoder on residual-stream activations from the dataset.
+Research preview. Writes a feature report under `experiments/`.
+
+`rl --task DIR --adapter DIR --group K --iters N` —
+group-relative policy gradient over live episodes. Each iteration
+serves the current adapter, samples K episodes in parallel, scores
+them with the task tests, and updates toward episodes that beat
+the group mean. Graded rewards (from tests that print "N of M
+cases failed") are used when available.
+
+`mint [--limit N]` — scan sessions for failure signals (user
+corrections, late test failures) and write runnable tasks from
+them into `tasks/minted/`. Workspaces are reconstructed from
+write-tool contents only; path fields that are device URLs are
+skipped.
+
+`import --from claude|codex` — convert another agent's session
+store to the omp session schema under `imported/`. Export with
+`--sessions imported`.
+
+`clusters` — group every session and failed episode by failure
+mode (tool errors, edit mismatches, provider errors, user
+corrections, gave up). Writes `experiments/clusters.json`; the
+dashboard shows it.
+
+`fix --task DIR --anchor MODEL` — measured repair loop: bench the
+local policy on the task, collect winning episodes from the anchor
+model, retrain the adapter, bench again, record the delta in the
+ledger.
+
+`doctor` — check omp, uv, Metal GPU, keys, sessions, disk. Prints
+the fix for each failure.
+
+`init` — doctor plus one scored episode with the default model.
+
+`publish [--push]` — render the ledger report to
+`docs/index.html`. With `--push`: commit, push, and enable GitHub
+Pages for the repo.
+
 ## Serve, in the omp UI
 
 A served adapter appears in the omp model picker like any other
@@ -145,6 +189,24 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
   cause of the local models' 0% pass rate (the v3 run covered
   about 1% of the dataset), and proposed the next experiment with
   decision metrics.
+- Inspect: logit lens over the tuned 3B adapter shows its 36
+  layers forming the prediction "the" from context tokens; the
+  artifact is on the dashboard.
+- SAE preview: 4,096 features over 68,035 residual tokens of the
+  tuned 0.5B; loss 0.307 -> 0.135 in 51 s. Most active features
+  fire densely; the preview labels itself as such.
+- RL: two GRPO rounds on fizzbuzz-fix with the served 0.5B
+  policy. Graded rewards (0.7 = 7 of 10 cases) arrived correctly;
+  the group showed no variance, so no update happened and the
+  ledger says so. The mechanism is verified, including the honest
+  no-signal path. Sampling temperature injection is verified at
+  the shim.
+- Import: 968 Codex sessions converted to the omp schema; export
+  with them grew the train set from 19,753 to 47,683 samples.
+- Mint: 3 tasks mined from real failed sessions; one ran
+  end-to-end and an API model passed it (reward 1.0).
+- Clusters: 2,040 tool errors, 497 edit mismatches, 313 provider
+  errors, 29 user corrections over the harvest.
 
 ## Limits
 

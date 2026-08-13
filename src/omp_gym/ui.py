@@ -19,6 +19,17 @@ from .trajectory import AssistantStep, ToolResultStep, UserStep, parse_session
 from .page import DASHBOARD_PAGE
 
 
+def _latest_artifact(experiments_dir: Path, prefix: str) -> dict | None:
+    """Read the newest experiment artifact with a given prefix."""
+    candidates = sorted(experiments_dir.glob(f"{prefix}-*.json"))
+    if not candidates:
+        single = experiments_dir / f"{prefix}.json"
+        if single.is_file():
+            return json.loads(single.read_text())
+        return None
+    return json.loads(candidates[-1].read_text())
+
+
 def _episode_index(runs_dir: Path) -> list[dict[str, object]]:
     """List all recorded episodes, newest first."""
     episodes = []
@@ -135,6 +146,25 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                     self._send_json([])
                     return
                 self._send_json(_transcript(runs_dir, episode))
+            elif parsed.path == "/api/clusters":
+                clusters_path = Path("experiments/clusters.json")
+                if clusters_path.is_file():
+                    self._send_json(
+                        json.loads(clusters_path.read_text())
+                    )
+                else:
+                    self._send_json({"clusters": {}})
+            elif parsed.path == "/api/inspect":
+                self._send_json(
+                    {
+                        "lens": _latest_artifact(
+                            Path("experiments"), "lens"
+                        ),
+                        "sae": _latest_artifact(
+                            Path("experiments"), "sae"
+                        ),
+                    }
+                )
             elif parsed.path == "/api/timeline":
                 entries, _ = read_ledger(ledger_path)
                 self._send_json(

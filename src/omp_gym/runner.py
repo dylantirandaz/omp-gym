@@ -6,14 +6,33 @@ supervision, then run the task tests. The test result is the reward.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .envfile import load_env_file
 from .task import TaskSpec
+
+_FAILED_PATTERN = re.compile(r"(\d+) of (\d+) cases failed")
+
+
+def _partial_credit(test_output: str) -> float | None:
+    """Fraction of cases passed when the test reports a count.
+
+    Test outputs that carry "N of M cases failed" produce a graded
+    reward; others give None and only the binary reward applies.
+    """
+    found = _FAILED_PATTERN.search(test_output)
+    if not found:
+        return None
+    failed, total = int(found.group(1)), int(found.group(2))
+    if total == 0:
+        return None
+    return (total - failed) / total
 
 
 @dataclass(frozen=True)
@@ -27,6 +46,7 @@ class EpisodeRecord:
     omp_exit_code: int
     test_exit_code: int
     reward: float
+    reward_partial: float | None
     duration_seconds: float
 
 
@@ -62,7 +82,8 @@ def run_episode(
     such as pointing omp at a policy server.
     """
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    episode_dir = (runs_dir / f"{task.name}-{stamp}").resolve()
+    unique = uuid.uuid4().hex[:6]
+    episode_dir = (runs_dir / f"{task.name}-{stamp}-{unique}").resolve()
     workspace = episode_dir / "ws"
     session_dir = episode_dir / "sess"
     episode_dir.mkdir(parents=True, exist_ok=False)
@@ -130,6 +151,7 @@ def run_episode(
         test_run.stdout + test_run.stderr
     )
 
+    partial = _partial_credit(test_run.stdout + test_run.stderr)
     record = EpisodeRecord(
         task=task.name,
         model=model if model is not None else "default",
@@ -138,6 +160,7 @@ def run_episode(
         omp_exit_code=omp_run.returncode,
         test_exit_code=test_run.returncode,
         reward=1.0 if test_run.returncode == 0 else 0.0,
+        reward_partial=partial,
         duration_seconds=round(duration, 1),
     )
     (episode_dir / "episode.json").write_text(

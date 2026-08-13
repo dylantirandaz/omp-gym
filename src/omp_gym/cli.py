@@ -239,6 +239,11 @@ def _cmd_serve(
 
 
 def main() -> None:
+    parser = _build_parser()
+    _dispatch(parser.parse_args())
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="omp-gym")
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -268,6 +273,174 @@ def main() -> None:
         help="hard wall-clock limit in seconds",
     )
     improve_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
+    inspect_parser = commands.add_parser(
+        "inspect", help="logit-lens a local model on a prompt"
+    )
+    inspect_parser.add_argument("--prompt", required=True)
+    inspect_parser.add_argument(
+        "--model", default="mlx-community/Qwen2.5-3B-Instruct-4bit"
+    )
+    inspect_parser.add_argument("--adapter", type=Path, default=None)
+    inspect_parser.add_argument("--top-k", type=int, default=3)
+    inspect_parser.add_argument(
+        "--out", type=Path, default=Path("experiments")
+    )
+    inspect_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
+    sae_parser = commands.add_parser(
+        "sae", help="train a tiny SAE on residual activations"
+    )
+    sae_parser.add_argument("--data", type=Path, default=Path("dataset"))
+    sae_parser.add_argument(
+        "--model", default="mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+    )
+    sae_parser.add_argument("--adapter", type=Path, default=None)
+    sae_parser.add_argument(
+        "--out", type=Path, default=Path("experiments")
+    )
+    sae_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
+    rl_parser = commands.add_parser(
+        "rl", help="group-relative policy gradient on live episodes"
+    )
+    rl_parser.add_argument("--task", type=Path, required=True)
+    rl_parser.add_argument(
+        "--base-model",
+        default="mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+    )
+    rl_parser.add_argument(
+        "--adapter", type=Path, default=Path("adapters/v4")
+    )
+    rl_parser.add_argument(
+        "--out-adapter", type=Path, default=Path("adapters/rl-v1")
+    )
+    rl_parser.add_argument("--group", type=int, default=3)
+    rl_parser.add_argument("--iters", type=int, default=2)
+    rl_parser.add_argument("--port", type=int, default=8810)
+    rl_parser.add_argument("--runs", type=Path, default=Path("runs"))
+    rl_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
+    fix_parser = commands.add_parser(
+        "fix", help="measured before/after retrain on one task"
+    )
+    fix_parser.add_argument("--task", type=Path, required=True)
+    fix_parser.add_argument("--anchor", default="claude-haiku-4-5")
+    fix_parser.add_argument(
+        "--base-model",
+        default="mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+    )
+    fix_parser.add_argument(
+        "--adapter", type=Path, default=Path("adapters/v4")
+    )
+    fix_parser.add_argument(
+        "--out-adapter", type=Path, default=Path("adapters/v5")
+    )
+    fix_parser.add_argument("--train-iters", type=int, default=40)
+    fix_parser.add_argument("--win-episodes", type=int, default=2)
+    fix_parser.add_argument("--trials", type=int, default=2)
+    fix_parser.add_argument("--port", type=int, default=8820)
+    fix_parser.add_argument("--runs", type=Path, default=Path("runs"))
+    fix_parser.add_argument(
+        "--sessions",
+        type=Path,
+        default=Path.home() / ".omp" / "agent" / "sessions",
+    )
+    fix_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
+    publish_parser = commands.add_parser(
+        "publish", help="publish the ledger report to GitHub Pages"
+    )
+    publish_parser.add_argument("--push", action="store_true")
+    publish_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
+    doctor_parser = commands.add_parser(
+        "doctor", help="check the environment and print fixes"
+    )
+    doctor_parser.add_argument(
+        "--env", type=Path, default=Path(".env")
+    )
+    doctor_parser.add_argument(
+        "--sessions",
+        type=Path,
+        default=Path.home() / ".omp" / "agent" / "sessions",
+    )
+
+    init_parser = commands.add_parser(
+        "init", help="doctor plus one scored first episode"
+    )
+    init_parser.add_argument(
+        "--env", type=Path, default=Path(".env")
+    )
+    init_parser.add_argument(
+        "--sessions",
+        type=Path,
+        default=Path.home() / ".omp" / "agent" / "sessions",
+    )
+    init_parser.add_argument(
+        "--runs", type=Path, default=Path("runs")
+    )
+    init_parser.add_argument(
+        "--task", type=Path, default=Path("tasks/fizzbuzz-fix")
+    )
+
+    import_parser = commands.add_parser(
+        "import", help="import sessions from other coding agents"
+    )
+    import_parser.add_argument(
+        "--from",
+        dest="source",
+        choices=["claude", "codex"],
+        required=True,
+    )
+    import_parser.add_argument(
+        "--out", type=Path, default=Path("imported")
+    )
+    import_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
+    clusters_parser = commands.add_parser(
+        "clusters", help="cluster sessions and episodes by failure mode"
+    )
+    clusters_parser.add_argument(
+        "--sessions",
+        type=Path,
+        default=Path.home() / ".omp" / "agent" / "sessions",
+    )
+    clusters_parser.add_argument("--runs", type=Path, default=Path("runs"))
+    clusters_parser.add_argument(
+        "--out", type=Path, default=Path("experiments")
+    )
+    clusters_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
+    mint_parser = commands.add_parser(
+        "mint", help="mint tasks from sessions where the agent failed"
+    )
+    mint_parser.add_argument(
+        "--sessions",
+        type=Path,
+        default=Path.home() / ".omp" / "agent" / "sessions",
+    )
+    mint_parser.add_argument(
+        "--out", type=Path, default=Path("tasks") / "minted"
+    )
+    mint_parser.add_argument("--limit", type=int, default=5)
+    mint_parser.add_argument(
         "--ledger", type=Path, default=DEFAULT_LEDGER
     )
 
@@ -369,7 +542,10 @@ def main() -> None:
         "--report", type=Path, default=Path("bench-report.md")
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+def _dispatch(args) -> None:
     if args.command == "preflight":
         raise SystemExit(_cmd_preflight())
     if args.command == "run":
@@ -435,6 +611,135 @@ def main() -> None:
         )
         print(json.dumps(asdict(result), indent=2))
         raise SystemExit(0 if result.summary_written else 1)
+    if args.command == "inspect":
+        from .inspect import run_lens
+
+        result = run_lens(
+            prompt=args.prompt,
+            model_id=args.model,
+            adapter_dir=args.adapter,
+            top_k=args.top_k,
+            out_dir=args.out,
+        )
+        append_entry(
+            args.ledger,
+            kind="inspect",
+            config={"model": args.model, "adapter": str(args.adapter)},
+            metrics={"layers": result["layers"]},
+            artifacts={},
+        )
+        raise SystemExit(0)
+    if args.command == "sae":
+        from .sae import train_sae
+
+        metrics = train_sae(args.data, args.model, args.adapter, args.out)
+        append_entry(
+            args.ledger,
+            kind="sae",
+            config={"model": args.model, "adapter": str(args.adapter)},
+            metrics={
+                k: v for k, v in metrics.items() if k != "artifact"
+            },
+            artifacts={"sae": metrics["artifact"]},
+        )
+        raise SystemExit(0)
+    if args.command == "rl":
+        from .rl import run_rl
+
+        summary = run_rl(
+            task_dir=args.task,
+            base_model=args.base_model,
+            adapter_dir=args.adapter,
+            out_adapter=args.out_adapter,
+            group_size=args.group,
+            iterations=args.iters,
+            port=args.port,
+            runs_dir=args.runs,
+            ledger_path=args.ledger,
+        )
+        print(json.dumps(summary, indent=2))
+        raise SystemExit(0)
+    if args.command == "fix":
+        from .fix import run_fix
+
+        summary = run_fix(
+            task_dir=args.task,
+            anchor_model=args.anchor,
+            base_model=args.base_model,
+            adapter_in=args.adapter,
+            adapter_out=args.out_adapter,
+            train_iters=args.train_iters,
+            win_episodes=args.win_episodes,
+            trials=args.trials,
+            port=args.port,
+            runs_dir=args.runs,
+            sessions_root=args.sessions,
+            ledger_path=args.ledger,
+        )
+        print(json.dumps(summary, indent=2))
+        raise SystemExit(0)
+    if args.command == "publish":
+        from .publish import publish_report
+
+        result = publish_report(Path.cwd(), args.ledger, args.push)
+        print(json.dumps(result, indent=2))
+        raise SystemExit(0)
+    if args.command == "doctor":
+        from .doctor import print_doctor, run_doctor
+
+        raise SystemExit(print_doctor(run_doctor(args.env, args.sessions)))
+    if args.command == "init":
+        from .doctor import run_init
+
+        raise SystemExit(
+            run_init(args.env, args.sessions, args.runs, args.task)
+        )
+    if args.command == "import":
+        from .importers import import_sessions
+
+        stats = import_sessions(args.source, args.out)
+        print(json.dumps(asdict(stats), indent=2))
+        append_entry(
+            args.ledger,
+            kind="import",
+            config={"source": args.source},
+            metrics={
+                "files_seen": stats.files_seen,
+                "files_written": stats.files_written,
+            },
+            artifacts={"out": stats.out_dir},
+        )
+        raise SystemExit(0)
+    if args.command == "clusters":
+        from .clusters import compute_clusters
+
+        payload = compute_clusters(args.sessions, args.runs, args.out)
+        append_entry(
+            args.ledger,
+            kind="clusters",
+            config={"sessions": str(args.sessions)},
+            metrics={
+                mode: data["count"]
+                for mode, data in payload["clusters"].items()
+            },
+            artifacts={"clusters": str(args.out / "clusters.json")},
+        )
+        for mode, data in payload["clusters"].items():
+            print(f"{mode:24s} {data['count']}")
+        raise SystemExit(0)
+    if args.command == "mint":
+        from .mint import mint_tasks
+
+        minted = mint_tasks(args.sessions, args.out, args.limit)
+        print(json.dumps([asdict(task) for task in minted], indent=2))
+        append_entry(
+            args.ledger,
+            kind="mint",
+            config={"sessions": str(args.sessions), "limit": args.limit},
+            metrics={"minted": len(minted)},
+            artifacts={"out": str(args.out)},
+        )
+        raise SystemExit(0)
     if args.command == "ui":
         from .ui import run_ui
 

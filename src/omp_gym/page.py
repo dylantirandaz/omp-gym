@@ -52,6 +52,8 @@ DASHBOARD_PAGE = """<!DOCTYPE html>
   <section><h2>Adapters</h2><div id="adapters"></div></section>
   <section><h2>Timeline</h2><div id="timeline"></div></section>
   <section class="wide"><h2>Episodes</h2><div id="episodes"></div></section>
+  <section><h2>Failure modes</h2><div id="failures"></div></section>
+  <section><h2>Interpretability (preview)</h2><div id="interp"></div></section>
   <section class="wide"><h2>Transcript</h2>
     <div id="transcript"><div id="empty">select an episode</div></div>
   </section>
@@ -138,8 +140,44 @@ function esc(s) {
     c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 }
 
+async function loadFailures() {
+  const data = await (await fetch("/api/clusters")).json();
+  const clusters = data.clusters ?? {};
+  document.getElementById("failures").innerHTML = table(
+    ["mode", "count"],
+    Object.entries(clusters).map(([mode, c]) =>
+      `<tr><td>${esc(mode)}</td><td>${c.count}</td></tr>`));
+}
+
+async function loadInterp() {
+  const data = await (await fetch("/api/inspect")).json();
+  let html = "";
+  if (data.lens) {
+    html += "<p class='dim'>logit lens · " + esc(data.lens.model) +
+      " · " + data.lens.layers + " layers</p>";
+    html += table(["layer", "top predictions"],
+      data.lens.top_by_layer.map((tokens, i) =>
+        `<tr><td>${i}</td><td class="dim">` +
+        tokens.map(esc).join(" · ") + "</td></tr>"));
+  }
+  if (data.sae) {
+    html += "<p class='dim'>SAE · layer " + data.sae.layer +
+      " · loss " + data.sae.loss_first.toFixed(3) + " → " +
+      data.sae.loss_last.toFixed(3) + "</p>";
+    html += table(["feature", "rate", "fires on"],
+      data.sae.report.slice(0, 12).map(f =>
+        `<tr><td>${f.feature}</td><td>${f.activity_rate}</td>` +
+        `<td class="dim">${esc((f.top_samples[0] ?? {}).excerpt ?? "")}</td></tr>`));
+  }
+  document.getElementById("interp").innerHTML =
+    html || '<div class="dim">run omp-gym inspect / sae first</div>';
+}
+
 load();
+loadFailures();
+loadInterp();
 setInterval(load, 15000);
+setInterval(loadFailures, 30000);
 </script>
 </body>
 </html>

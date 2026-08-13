@@ -30,6 +30,20 @@ runs through `uv run omp-gym <verb>`.
    adapter as an omp provider. Blocks; run it in the background.
 7. `report` — compare adapters and models from the ledger.
 8. `ui --port 8900` — serve the dashboard.
+9. `inspect --prompt "..." --adapter adapters/<name>` — logit lens
+   over every layer. Artifact under `experiments/`.
+10. `sae --adapter adapters/<name>` — tiny SAE on residual
+    activations. Research preview.
+11. `rl --task tasks/<name> --adapter adapters/<name> --group K
+    --iters N` — group-relative policy gradient on live episodes.
+12. `mint` — write runnable tasks from failed sessions into
+    `tasks/minted/`.
+13. `import --from claude|codex` — import other agents' sessions.
+14. `clusters` — failure-mode counts with example artifacts.
+15. `fix --task tasks/<name> --anchor <model>` — measured
+    before/after retrain on one task.
+16. `doctor` / `init` — environment checks; first scored episode.
+17. `publish --push` — render the ledger to GitHub Pages.
 
 ## Procedure for improving the model
 

@@ -16,6 +16,7 @@ gap with the same convention the omp-gym adapters are trained on:
 """
 
 import json
+import os
 import re
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -100,11 +101,20 @@ def _extract_tool_calls(text: str) -> tuple[str, list[dict]]:
 
 
 def _rewrite_request(body: dict) -> dict:
-    """Move tools into the system message and force non-streaming."""
+    """Move tools into the system message and force non-streaming.
+
+    When OMP_GYM_SAMPLE_TEMP is set and the request carries no
+    temperature, the shim injects it. RL sampling depends on
+    rollout diversity; the server default of temperature 0 makes
+    every episode identical.
+    """
     upstream = dict(body)
     tools = upstream.pop("tools", None)
     upstream.pop("tool_choice", None)
     upstream["stream"] = False
+    sample_temp = os.environ.get("OMP_GYM_SAMPLE_TEMP")
+    if sample_temp and "temperature" not in upstream:
+        upstream["temperature"] = float(sample_temp)
     if isinstance(tools, list) and tools:
         suffix = _tools_to_system_suffix(tools)
         messages = [dict(m) for m in upstream.get("messages", [])]
