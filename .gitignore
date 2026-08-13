@@ -1,10 +1,10 @@
 .env
 .venv/
 runs/
-bench-report.*
-dataset/
+bench-*.md
+bench-*.jsonl
+dataset*/
 adapters/
 __pycache__/
 *.egg-info/
-bench-local.*
 experiments/
