@@ -203,13 +203,19 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
   the shim.
 - Import: 968 Codex sessions converted to the omp schema; export
   with them grew the train set from 19,753 to 47,683 samples.
-- Mint: 3 tasks mined from real failed sessions; one ran
-  end-to-end and an API model passed it (reward 1.0).
+- Mint: tasks mined from real failed sessions; one ran
+  end-to-end and an API model passed it (reward 1.0). Workspaces
+  are reconstructed from write calls with session-relative paths;
+  tasks whose dependencies extend past what the session wrote are
+  labeled partial and often need their original repo.
 - Clusters: 2,040 tool errors, 497 edit mismatches, 313 provider
   errors, 29 user corrections over the harvest.
 
 ## Limits
 
+- Minted tasks from sessions in large repos can reference files
+  the session never wrote. Those tasks run but usually cannot
+  pass standalone; treat them as starting points.
 - Harvested sessions have no quality filter. Failed work trains
   the model too.
 - Thinking blocks are not exported.
