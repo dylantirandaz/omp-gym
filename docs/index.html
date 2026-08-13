@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>omp-gym report</title>
+<style>
+body { background: #0d1117; color: #e6edf3; max-width: 900px;
+       margin: 40px auto; padding: 0 16px;
+       font: 15px/1.6 -apple-system, monospace; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+td, th { border: 1px solid #30363d; padding: 6px 10px;
+          text-align: left; }
+th { color: #8b949e; font-weight: normal; }
+h1 { font-size: 22px; } h2 { font-size: 16px; color: #8b949e; }
+code { color: #d29922; }
+</style></head><body><h1>omp-gym report</h1>
+<h2>Adapters</h2>
+<table>
+<tr><th>adapter</th><th>model</th><th>iters</th><th>train loss</th><th>val loss</th><th>when</th></tr>
+<tr><td>adapters/v3</td><td>Qwen2.5-3B-Instruct-4bit</td><td>200</td><td>2.058 -&gt; 1.404</td><td>-</td><td>2026-08-12T12:41</td></tr>
+<tr><td>adapters/v4</td><td>Qwen2.5-0.5B-Instruct-4bit</td><td>36</td><td>0.6947844624519348 -&gt; 2.8328517487352656e-07</td><td>0.6931471824645996 -&gt; 6.532351477517295e-07</td><td>2026-08-13T04:09</td></tr>
+</table>
+<h2>Models</h2>
+<table>
+<tr><th>model</th><th>pass rate</th><th>cost per pass</th><th>tokens per solve</th><th>mean tokens</th><th>runs</th></tr>
+<tr><td>openrouter/moonshotai/kimi-k2</td><td>100% (3/3)</td><td>$0.0215</td><td>36378</td><td>36378</td><td>3</td></tr>
+<tr><td>openrouter/deepseek/deepseek-chat</td><td>100% (3/3)</td><td>$0.0182</td><td>51565</td><td>51565</td><td>3</td></tr>
+<tr><td>claude-haiku-4-5</td><td>100% (3/3)</td><td>$0.0259</td><td>57733</td><td>57733</td><td>3</td></tr>
+<tr><td>openrouter/qwen/qwen3-coder</td><td>100% (3/3)</td><td>$0.0471</td><td>84770</td><td>84770</td><td>3</td></tr>
+<tr><td>omp-gym/mlx-community/Qwen2.5-3B-Instruct-4bit</td><td>0% (0/3)</td><td>-</td><td>-</td><td>12363</td><td>3</td></tr>
+<tr><td>omp-gym/mlx-community/Qwen2.5-0.5B-Instruct-4bit</td><td>0% (0/6)</td><td>-</td><td>-</td><td>1266975</td><td>6</td></tr>
+</table>
+<h2>Timeline</h2>
+<p>• 2026-08-13T04:47 improve: exit_code=0, duration_seconds=1500.5, verbs_recorded=3</p>
+<p>• 2026-08-13T04:55 export: episodes_seen=48, sessions_seen=112, trajectories_exported=136</p>
+<p>• 2026-08-13T04:58 improve: exit_code=0, duration_seconds=601.3, verbs_recorded=1</p>
+<p>• 2026-08-13T12:39 mint: minted=3</p>
+<p>• 2026-08-13T12:40 mint: minted=2</p>
+<p>• 2026-08-13T12:42 clusters: tool_errors=2040, edit_mismatches=497, provider_errors=313</p>
+<p>• 2026-08-13T12:44 import: files_seen=2, files_written=0</p>
+<p>• 2026-08-13T12:45 run: reward=1.0, duration_seconds=301.5, test_exit_code=0</p>
+<p>• 2026-08-13T12:47 import: files_seen=968, files_written=968</p>
+<p>• 2026-08-13T12:51 export: episodes_seen=53, sessions_seen=968, trajectories_exported=991</p></body></html>
