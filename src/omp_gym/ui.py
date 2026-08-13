@@ -18,6 +18,46 @@ from .trajectory import AssistantStep, ToolResultStep, UserStep, parse_session
 
 from .page import DASHBOARD_PAGE
 
+_LENS_CACHE: dict[str, object] = {}
+
+
+def _live_lens(prompt: str, model_id: str, adapter_dir: Path | None, top_k: int) -> dict:
+    """Compute a logit lens for an arbitrary prompt.
+
+    The model and tokenizer load once per server process and stay
+    cached; adapter weights apply on first load too.
+    """
+    import mlx.core as mx
+    from mlx_lm import load as mlx_load
+
+    from .inspect import _layer_predictions
+
+    cache_key = f"{model_id}::{adapter_dir}"
+    if cache_key not in _LENS_CACHE:
+        model, tokenizer = mlx_load(model_id)
+        if adapter_dir is not None:
+            weights = adapter_dir / "adapters.safetensors"
+            if weights.is_file():
+                model.load_weights(str(weights), strict=False)
+        _LENS_CACHE[cache_key] = (model, tokenizer)
+    model, tokenizer = _LENS_CACHE[cache_key]
+
+    ids = mx.array(tokenizer.encode(prompt))[None]
+    per_layer = _layer_predictions(model, ids, top_k)
+    top_by_layer = []
+    for top in per_layer:
+        token_ids = top[0, -1, :].tolist()
+        top_by_layer.append(
+            [tokenizer.decode([int(t)]) for t in reversed(token_ids)]
+        )
+    return {
+        "prompt": prompt,
+        "model": model_id,
+        "adapter": str(adapter_dir) if adapter_dir else None,
+        "layers": len(top_by_layer),
+        "top_by_layer": top_by_layer,
+    }
+
 
 def _latest_artifact(experiments_dir: Path, prefix: str) -> dict | None:
     """Read the newest experiment artifact with a given prefix."""
@@ -146,6 +186,64 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                     self._send_json([])
                     return
                 self._send_json(_transcript(runs_dir, episode))
+            elif parsed.path == "/api/lens":
+                prompt = query.get("prompt", [""])[0]
+                if not prompt:
+                    self._send_json({"error": "no prompt"})
+                    return
+                model_id = query.get("model", [None])[0]
+                adapter_raw = query.get("adapter", [None])[0]
+                try:
+                    self._send_json(
+                        _live_lens(
+                            prompt,
+                            model_id or "mlx-community/Qwen2.5-3B-Instruct-4bit",
+                            Path(adapter_raw) if adapter_raw else None,
+                            3,
+                        )
+                    )
+                except Exception as error:
+                    self._send_json({"error": str(error)})
+            elif parsed.path == "/api/training":
+                entries, _ = read_ledger(ledger_path)
+                series = []
+                for entry in entries:
+                    if entry.kind != "train":
+                        continue
+                    metrics = entry.metrics
+                    first = metrics.get("first_train_loss")
+                    last = metrics.get("last_train_loss")
+                    if first is None or last is None:
+                        continue
+                    series.append(
+                        {
+                            "adapter": entry.config.get("adapter", "?"),
+                            "method": entry.config.get("method", "sft"),
+                            "first": first,
+                            "last": last,
+                            "first_val": metrics.get("first_val_loss"),
+                            "last_val": metrics.get("last_val_loss"),
+                            "iters": metrics.get("iterations"),
+                            "series": metrics.get("train_series"),
+                        }
+                    )
+                rl_entries = [
+                    entry for entry in entries if entry.kind == "rl"
+                ]
+                rl_series = [
+                    {
+                        "adapter": entry.config.get("adapter", "?"),
+                        "mean_reward_first": entry.metrics.get(
+                            "mean_reward_first"
+                        ),
+                        "mean_reward_last": entry.metrics.get(
+                            "mean_reward_last"
+                        ),
+                        "rounds": entry.metrics.get("rounds", []),
+                    }
+                    for entry in rl_entries
+                ]
+                self._send_json({"train": series, "rl": rl_series})
             elif parsed.path == "/api/clusters":
                 clusters_path = Path("experiments/clusters.json")
                 if clusters_path.is_file():

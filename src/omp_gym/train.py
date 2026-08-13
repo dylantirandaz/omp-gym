@@ -30,6 +30,7 @@ class TrainReport:
     first_val_loss: float | None
     last_val_loss: float | None
     device_name: str
+    train_series: list[float] | None = None
 
 
 class TrainError(SystemExit):
@@ -105,6 +106,7 @@ def _finish_report(
         first_val_loss=val_losses[0] if val_losses else None,
         last_val_loss=val_losses[-1] if val_losses else None,
         device_name=device_name,
+        train_series=losses[:: max(1, len(losses) // 100)],
     )
     (adapter_dir / "train_report.json").write_text(
         json.dumps(asdict(report), indent=2)

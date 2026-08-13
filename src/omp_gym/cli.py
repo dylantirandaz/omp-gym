@@ -60,6 +60,7 @@ def _cmd_export(
     tokenizer_id: str,
     token_cap: int,
     pairs: bool,
+    min_quality: bool,
 ) -> int:
     if pairs:
         from .export import export_pairs
@@ -90,6 +91,7 @@ def _cmd_export(
         min_reward,
         tokenizer_id,
         token_cap,
+        min_quality,
     )
     print(json.dumps(asdict(stats), indent=2))
     if stats.train_samples == 0:
@@ -502,6 +504,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="export DPO preference pairs instead of SFT samples",
     )
+    export_parser.add_argument(
+        "--no-quality-filter",
+        action="store_true",
+        help="include sessions that ended as failures in the dataset",
+    )
 
     train_parser = commands.add_parser("train", help="train a LoRA adapter")
     train_parser.add_argument("--data", type=Path, default=Path("dataset"))
@@ -560,6 +567,7 @@ def _dispatch(args) -> None:
                 args.tokenizer,
                 args.max_tokens,
                 args.pairs,
+                not args.no_quality_filter,
             )
         )
     if args.command == "train":

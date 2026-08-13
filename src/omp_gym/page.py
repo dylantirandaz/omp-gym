@@ -54,6 +54,18 @@ DASHBOARD_PAGE = """<!DOCTYPE html>
   <section class="wide"><h2>Episodes</h2><div id="episodes"></div></section>
   <section><h2>Failure modes</h2><div id="failures"></div></section>
   <section><h2>Interpretability (preview)</h2><div id="interp"></div></section>
+  <section class="wide"><h2>Live lens</h2>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="lensprompt" placeholder="type a prompt, Enter to run the lens"
+             onkeydown="if(event.key==='Enter')runLens()"
+             style="flex:1;background:#0d1117;border:1px solid var(--border);
+                    color:var(--text);padding:8px;border-radius:6px;font:inherit">
+      <button onclick="runLens()" style="background:#1c2b3a;border:1px solid var(--border);
+              color:var(--text);padding:8px 16px;border-radius:6px;cursor:pointer">run</button>
+    </div>
+    <div id="lensout"><div class="dim">the lens shows the top predicted next token after every decoder layer</div></div>
+  </section>
+  <section class="wide"><h2>Training</h2><div id="training"></div></section>
   <section class="wide"><h2>Transcript</h2>
     <div id="transcript"><div id="empty">select an episode</div></div>
   </section>
@@ -173,9 +185,62 @@ async function loadInterp() {
     html || '<div class="dim">run omp-gym inspect / sae first</div>';
 }
 
+async function runLens() {
+  const prompt = document.getElementById("lensprompt").value.trim();
+  if (!prompt) return;
+  const out = document.getElementById("lensout");
+  out.innerHTML = '<div class="dim">loading model and computing… (first run is slow)</div>';
+  const res = await (await fetch(
+    "/api/lens?prompt=" + encodeURIComponent(prompt))).json();
+  if (res.error) { out.innerHTML = '<div class="fail">' + esc(res.error) + '</div>'; return; }
+  out.innerHTML = table(["layer", "top predictions"],
+    res.top_by_layer.map((tokens, i) =>
+      `<tr><td>${i}</td><td class="dim">` +
+      tokens.map(esc).join(" · ") + "</td></tr>"));
+}
+
+function sparklineSVG(series, color) {
+  if (!series || series.length < 2) return "";
+  const w = 220, h = 48;
+  const min = Math.min(...series), max = Math.max(...series);
+  const range = max - min || 1;
+  const pts = series.map((v, i) => {
+    const x = (i / (series.length - 1)) * (w - 4) + 2;
+    const y = h - 4 - ((v - min) / range) * (h - 8);
+    return x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" ");
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+}
+
+async function loadTraining() {
+  const data = await (await fetch("/api/training")).json();
+  let html = "";
+  if (data.train && data.train.length) {
+    html += data.train.map(t => {
+      const curve = t.series && t.series.length > 1
+        ? sparklineSVG(t.series, "#3fb950") : "";
+      return `<div style="margin-bottom:14px"><strong>${esc(t.adapter)}</strong>` +
+        ` <span class="dim">${t.method} · ${t.iters} iters · ` +
+        `${t.first.toFixed(3)} → ${t.last.toFixed(4)}` +
+        (t.first_val != null ? ` · val ${t.first_val.toFixed(3)} → ${t.last_val.toFixed(4)}` : "") +
+        `</span><br>${curve}</div>`;
+    }).join("");
+  }
+  if (data.rl && data.rl.length) {
+    html += data.rl.map(r =>
+      `<div><strong>${esc(r.adapter)}</strong> <span class="dim">rl · ` +
+      `mean reward ${r.mean_reward_first} → ${r.mean_reward_last}</span></div>`
+    ).join("");
+  }
+  document.getElementById("training").innerHTML =
+    html || '<div class="dim">no training runs recorded</div>';
+}
+
 load();
 loadFailures();
 loadInterp();
+loadTraining();
 setInterval(load, 15000);
 setInterval(loadFailures, 30000);
 </script>

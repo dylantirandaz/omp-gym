@@ -80,6 +80,46 @@ def _relative_write_path(path: str, cwd: Path | None) -> str:
     return path
 
 
+def _clean_read_payload(text: str) -> str | None:
+    """Recover file content from a read tool payload.
+
+    Stored reads carry three wrappers, alone or combined: a CLI
+    header block (URL:, Content-Type: ...), line-number prefixes
+    ("159: ..."), and a trailing "[Showing lines ...]" marker.
+    Returns None when the payload is not file content (directory
+    listing, error page, empty result).
+    """
+    if not text.strip():
+        return None
+    if text.strip() == "(empty directory)":
+        return None
+    body = text
+    # Drop a CLI header block if present (URL/Content-Type/Method).
+    if "\n---\n" in body:
+        head, _, rest = body.partition("\n---\n")
+        head_lines = [line for line in head.splitlines() if line.strip()]
+        if head_lines and all(
+            line.split(":", 1)[0] in ("URL", "Content-Type", "Method", "Path")
+            for line in head_lines
+        ):
+            body = rest.lstrip()
+    # Drop trailing truncation markers.
+    body = re.sub(
+        r"\n?\[Showing lines [^\]]+\]\s*$", "", body.rstrip()
+    )
+    body = re.sub(
+        r"\n?\[Read [^\]]+\]\s*$", "", body.rstrip()
+    )
+    lines = body.splitlines()
+    numbered = [line for line in lines if re.match(r"^\d+: ", line)]
+    if lines and len(numbered) >= max(2, int(0.8 * len(lines))):
+        lines = [re.sub(r"^\d+: ?", "", line) for line in lines]
+        body = "\n".join(lines)
+    if not body.strip():
+        return None
+    return body
+
+
 def _scan_session(session_file: Path) -> dict | None:
     """Extract failure evidence from one session."""
     trajectory = parse_session(session_file)
@@ -89,6 +129,9 @@ def _scan_session(session_file: Path) -> dict | None:
     test_command = None
     test_failed_late = False
     writes: dict[str, str] = {}
+    reads: dict[str, str] = {}
+    pending_reads: dict[str, str] = {}
+    latest: dict[str, str] = {}
     steps = list(trajectory.steps)
     for index, step in enumerate(steps):
         if isinstance(step, UserStep):
@@ -102,13 +145,38 @@ def _scan_session(session_file: Path) -> dict | None:
                     command = str(call.arguments.get("command", ""))
                     found = _TEST_COMMAND.search(command)
                     if found:
+                        # The last match is the command the session
+                        # ended on, which matches the final file state.
                         test_command = found.group(1).strip()
                 elif call.name == "write":
                     path = str(call.arguments.get("path", ""))
                     content = str(call.arguments.get("content", ""))
                     if path and content and "://" not in path:
-                        writes[_relative_write_path(path, cwd)] = content
+                        rel = _relative_write_path(path, cwd)
+                        writes[rel] = content
+                        latest[rel] = content
+                elif call.name == "read":
+                    path = str(call.arguments.get("path", ""))
+                    if path and "://" not in path:
+                        pending_reads[call.call_id] = (
+                            _relative_write_path(path, cwd)
+                        )
         elif isinstance(step, ToolResultStep):
+            if step.tool_name == "read" and step.call_id in pending_reads:
+                rel = pending_reads[step.call_id]
+                cleaned = (
+                    None
+                    if step.is_error
+                    else _clean_read_payload(step.text)
+                )
+                if (
+                    cleaned is not None
+                    and rel not in reads
+                    and rel not in writes
+                ):
+                    reads[rel] = cleaned
+                if cleaned is not None:
+                    latest[rel] = cleaned
             if (
                 step.tool_name == "bash"
                 and index > len(steps) * 0.6
@@ -126,6 +194,8 @@ def _scan_session(session_file: Path) -> dict | None:
         "signals": signals,
         "test_command": test_command,
         "writes": writes,
+        "reads": reads,
+        "latest": latest,
     }
 
 
@@ -147,27 +217,72 @@ def mint_tasks(
         task_dir = out_dir / name
         workspace = task_dir / "workspace"
         workspace.mkdir(parents=True, exist_ok=True)
-        for path, content in evidence["writes"].items():
+        for path, content in evidence["latest"].items():
+            if not path or path in (".", "/", "\\"):
+                continue
             target = workspace / path
+            if target.is_dir():
+                continue
+            # A stored path can disagree with a deeper path about
+            # which one is the file; the deeper path wins.
+            ancestor_file = None
+            cursor = target.parent
+            while cursor != workspace and cursor != cursor.parent:
+                if cursor.is_file():
+                    ancestor_file = cursor
+                    break
+                cursor = cursor.parent
+            if ancestor_file is not None:
+                ancestor_file.unlink()
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content)
+        test_command = evidence["test_command"]
+        test_target = re.search(
+            r"(\S*test_\S+\.py)", test_command
+        )
+        selector = re.search(r"-k\s+'([^']+)'", test_command)
+        if selector is not None and test_target is not None:
+            target_name = Path(test_target.group(1)).name
+            target_content = evidence["latest"].get(
+                test_target.group(1)
+            ) or next(
+                (
+                    content
+                    for path, content in evidence["latest"].items()
+                    if Path(path).name == target_name
+                ),
+                None,
+            )
+            if target_content is not None:
+                names = selector.group(1).split(" or ")
+                missing = [
+                    name
+                    for name in names
+                    if f"def test_{name}" not in target_content
+                    and name not in target_content
+                ]
+                if missing:
+                    test_command = re.sub(
+                        r"\s+-k\s+'[^']+'", "", test_command
+                    )
         prompt = (
             evidence["prompt"]
             + "\n\nRun `"
-            + evidence["test_command"]
+            + test_command
             + "` to confirm the fix.\n"
-        )
-        test_target = re.search(
-            r"(\S*test_\S+\.py)", evidence["test_command"]
         )
         fidelity = "partial"
         if test_target is not None:
             expected = test_target.group(1)
-            if expected in evidence["writes"]:
+            if (
+                expected in evidence["writes"]
+                or expected in evidence["reads"]
+                or expected in evidence["latest"]
+            ):
                 fidelity = "complete"
         (task_dir / "task.toml").write_text(
             f'prompt = """\n{prompt}"""\n'
-            f'test_command = ["sh", "-c", "{evidence["test_command"]}"]\n'
+            f'test_command = ["sh", "-c", "{test_command}"]\n'
             f'fidelity = "{fidelity}"\n'
         )
         (task_dir / "SOURCE.md").write_text(
@@ -179,7 +294,7 @@ def mint_tasks(
                 name=name,
                 source_session=str(session_file),
                 signals=evidence["signals"],
-                test_command=evidence["test_command"],
+                test_command=test_command,
                 fidelity=fidelity,
                 task_dir=str(task_dir),
             )

@@ -23,10 +23,15 @@ class ToolCall:
 
 @dataclass(frozen=True)
 class AssistantStep:
-    """One assistant turn: visible text plus tool calls."""
+    """One assistant turn: visible text plus tool calls.
+
+    thinking holds the model's thinking blocks when the session
+    recorded them. It is empty for models without thinking output.
+    """
 
     text: str
     tool_calls: tuple[ToolCall, ...]
+    thinking: str = ""
 
 
 @dataclass(frozen=True)
@@ -78,6 +83,7 @@ def _parse_assistant(message: dict[str, object]) -> AssistantStep:
     content = message.get("content")
     calls: list[ToolCall] = []
     texts: list[str] = []
+    thinking_parts: list[str] = []
     if isinstance(content, list):
         for block in content:
             if not isinstance(block, dict):
@@ -85,6 +91,8 @@ def _parse_assistant(message: dict[str, object]) -> AssistantStep:
             block_type = block.get("type")
             if block_type == "text":
                 texts.append(str(block.get("text", "")))
+            elif block_type == "thinking":
+                thinking_parts.append(str(block.get("thinking", "")))
             elif block_type == "toolCall":
                 arguments = block.get("arguments")
                 calls.append(
@@ -96,7 +104,11 @@ def _parse_assistant(message: dict[str, object]) -> AssistantStep:
                         else {},
                     )
                 )
-    return AssistantStep(text="\n".join(texts), tool_calls=tuple(calls))
+    return AssistantStep(
+        text="\n".join(texts),
+        tool_calls=tuple(calls),
+        thinking="\n".join(thinking_parts),
+    )
 
 
 def parse_session(session_file: Path) -> Trajectory:

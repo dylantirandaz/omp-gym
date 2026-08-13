@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from .mint import _CORRECTION
 from .trajectory import (
     AssistantStep,
     ToolResultStep,
@@ -71,12 +72,28 @@ class ExportStats:
 
     episodes_seen: int
     sessions_seen: int
+    sessions_filtered: int
     trajectories_exported: int
     turns_exported: int
     turns_skipped_oversize: int
     torn_lines: int
     train_samples: int
     valid_samples: int
+
+
+def _elide_middle(text: str, limit: int) -> str:
+    """Truncate long text by keeping the head and the tail.
+
+    Tool output puts the setup at the top and the error or result
+    at the bottom. Cutting only the tail loses the part that
+    matters for failures, so the middle goes instead.
+    """
+    if len(text) <= limit:
+        return text
+    head = limit // 2
+    tail = limit - head
+    marker = f"\n...[elided {len(text) - limit} chars]...\n"
+    return text[:head] + marker + text[len(text) - tail:]
 
 
 def _render_messages(
@@ -97,6 +114,10 @@ def _render_messages(
         match step:
             case AssistantStep():
                 parts = [step.text] if step.text else []
+                if step.thinking:
+                    parts.insert(
+                        0, f"<think>\n{step.thinking}\n</think>"
+                    )
                 for call in step.tool_calls:
                     payload = json.dumps(
                         {"name": call.name, "arguments": call.arguments}
@@ -108,7 +129,7 @@ def _render_messages(
                         {"role": "assistant", "content": content}
                     )
             case ToolResultStep():
-                body = step.text[:TOOL_RESULT_LIMIT]
+                body = _elide_middle(step.text, TOOL_RESULT_LIMIT)
                 status = "error" if step.is_error else "ok"
                 messages.append(
                     {
@@ -156,7 +177,8 @@ def _split_turns(
     per message: content tokens plus a fixed template overhead that
     overestimates the real chat template, so a sample never loses
     its completion to truncation. A turn whose bare sample (system
-    plus turn) does not fit the budget is skipped.
+    plus turn) does not fit the budget is kept with its middle
+    elided, and counted as truncated.
     """
     if not messages or messages[0]["role"] != "system":
         raise AssertionError("rendered messages must start with system")
@@ -171,10 +193,18 @@ def _split_turns(
         turn = messages[index]
         if turn["role"] != "assistant":
             continue
-        used = costs[0] + costs[index]
-        if used > budget:
+        turn_cost = costs[index]
+        if costs[0] + turn_cost > budget:
+            turn_budget = budget - costs[0] - MESSAGE_OVERHEAD_TOKENS
+            turn = dict(turn)
+            turn["content"] = _elide_middle(
+                turn["content"], max(turn_budget * 3, 64)
+            )
+            turn_cost = (
+                count_tokens(turn["content"]) + MESSAGE_OVERHEAD_TOKENS
+            )
             skipped += 1
-            continue
+        used = costs[0] + turn_cost
         start = index
         while start > 1 and used + costs[start - 1] <= budget:
             start -= 1
@@ -209,19 +239,61 @@ def _collect_episode_messages(
     return rendered, seen, torn
 
 
+def _session_failed(session_file: Path, trajectory: Trajectory) -> bool:
+    """True when a session ended as a failure, not a success.
+
+    Three signals: a provider error ended the session, the last
+    tool result is an error with no successful call after it, or
+    the user corrected the agent and no work followed the last
+    correction. Sessions without any of these pass the filter.
+    """
+    raw = session_file.read_text()
+    if '"stopReason": "error"' in raw:
+        return True
+    last_tool_error_at = -1
+    last_assistant_at = -1
+    corrections_before = 0
+    for index, step in enumerate(trajectory.steps):
+        if isinstance(step, ToolResultStep) and step.is_error:
+            last_tool_error_at = index
+        elif isinstance(step, AssistantStep) and step.tool_calls:
+            last_assistant_at = index
+        elif isinstance(step, UserStep):
+            if _CORRECTION.search(step.text):
+                corrections_before += 1
+    if corrections_before and last_assistant_at == -1:
+        return True
+    if (
+        corrections_before
+        and last_tool_error_at > last_assistant_at
+        and last_tool_error_at != -1
+    ):
+        return True
+    return False
+
+
 def _collect_session_messages(
     sessions_root: Path,
-) -> tuple[list[list[dict[str, str]]], int, int]:
-    """Render all omp sessions: (rendered, seen, torn)."""
+    min_quality: bool,
+) -> tuple[list[list[dict[str, str]]], int, int, int]:
+    """Render all omp sessions: (rendered, seen, filtered, torn).
+
+    With min_quality on, sessions that ended as failures do not
+    enter the SFT dataset. They remain available for DPO pairs.
+    """
     rendered: list[list[dict[str, str]]] = []
     seen = 0
+    filtered = 0
     torn = 0
     for session_file in sorted(sessions_root.rglob("*.jsonl")):
         seen += 1
         trajectory = parse_session(session_file)
         torn += trajectory.torn_lines
+        if min_quality and _session_failed(session_file, trajectory):
+            filtered += 1
+            continue
         rendered.append(_render_messages(trajectory, prompt=None))
-    return rendered, seen, torn
+    return rendered, seen, filtered, torn
 
 
 @dataclass(frozen=True)
@@ -372,6 +444,7 @@ def export_dataset(
     min_reward: float,
     tokenizer_id: str,
     token_cap: int,
+    min_quality: bool = True,
 ) -> ExportStats:
     """Collect both sources and write per-turn train/valid files.
 
@@ -385,12 +458,13 @@ def export_dataset(
         runs_dir, min_reward
     )
     if sessions_root.is_dir():
-        session_msgs, sessions_seen, session_torn = (
-            _collect_session_messages(sessions_root)
+        session_msgs, sessions_seen, sessions_filtered, session_torn = (
+            _collect_session_messages(sessions_root, min_quality)
         )
     else:
         print(f"note: sessions root {sessions_root} does not exist")
-        session_msgs, sessions_seen, session_torn = [], 0, 0
+        session_msgs, sessions_seen = [], 0
+        sessions_filtered, session_torn = 0, 0
 
     splits = [
         _split_turns(messages, count_tokens, token_cap)
@@ -406,6 +480,7 @@ def export_dataset(
         return ExportStats(
             episodes_seen=episodes_seen,
             sessions_seen=sessions_seen,
+            sessions_filtered=sessions_filtered,
             trajectories_exported=0,
             turns_exported=0,
             turns_skipped_oversize=skipped,
@@ -443,6 +518,7 @@ def export_dataset(
     return ExportStats(
         episodes_seen=episodes_seen,
         sessions_seen=sessions_seen,
+        sessions_filtered=sessions_filtered,
         trajectories_exported=len(splits),
         turns_exported=len(train) + len(valid),
         turns_skipped_oversize=skipped,

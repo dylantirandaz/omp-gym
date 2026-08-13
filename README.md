@@ -95,7 +95,11 @@ directory.
 
 `report` — render adapter and model comparisons from the ledger.
 
-`ui [--port N]` — serve the dashboard. Read-only.
+`ui [--port N]` — serve the dashboard. Read-only. Shows the
+models leaderboard, adapters, episodes, failure clusters, SAE
+features, a live logit lens (type a prompt, get the top predicted
+token after every decoder layer), and training curves for every
+adapter that has a recorded loss series.
 
 `inspect --prompt "..." [--adapter DIR]` — logit-lens a local
 model: the top predicted tokens after every decoder layer. Writes
@@ -211,16 +215,29 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
 - Clusters: 2,040 tool errors, 497 edit mismatches, 313 provider
   errors, 29 user corrections over the harvest.
 
-## Limits
+## Design decisions and limits
 
-- Minted tasks from sessions in large repos can reference files
-  the session never wrote. Those tasks run but usually cannot
-  pass standalone; treat them as starting points.
-- Harvested sessions have no quality filter. Failed work trains
-  the model too.
-- Thinking blocks are not exported.
-- Tool results are cut at 4000 characters in the export.
-- Turns whose bare sample exceeds the token budget are skipped.
+- Minted workspaces are reconstructed from both read and write
+  tool calls, keyed to the session's working directory. The
+  latest content of each file wins. Test commands are validated
+  against the reconstructed files; a `-k` selector whose names
+  do not appear is stripped. Tasks whose dependencies extend past
+  what the session touched are labeled `partial` and may need
+  their original repo to pass.
+- Harvested sessions go through a quality filter: sessions that
+  ended as failures do not enter the SFT dataset. Pass
+  `--no-quality-filter` to include them. DPO pairs still use
+  losing episodes by design.
+- Thinking blocks are exported as `<think>` blocks when the
+  session recorded them.
+- Tool results longer than 4000 characters keep the head and the
+  tail with an elision marker; the middle is dropped, because the
+  error output lives at the end.
+- Assistant turns that exceed the token budget are kept with
+  their middle elided rather than skipped.
+- The dashboard is read-only and local. The training chart draws
+  real loss curves only for adapters trained after series
+  recording was added (v6 onward).
 
 ## Prime Intellect Environments Hub
 
