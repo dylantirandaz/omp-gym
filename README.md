@@ -210,7 +210,8 @@ other episode, so winners feed the next training export.
 
 ## Limits of this version
 
-- SFT only. Low-reward episodes are dropped, not used as negatives.
+- DPO pair export works; local DPO training on the M3 is slow
+  enough with mlx-lm-lora that only short runs are practical.
 - Thinking blocks are not exported.
 - Tool results are cut at 4000 characters in the export.
 - Turns whose bare sample exceeds the token budget are skipped.
