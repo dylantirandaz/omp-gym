@@ -64,7 +64,13 @@ def _cmd_export(
     if pairs:
         from .export import export_pairs
 
-        pair_stats = export_pairs(runs_dir, out_dir, max_pairs_per_task=16)
+        pair_stats = export_pairs(
+            runs_dir,
+            out_dir,
+            max_pairs_per_task=16,
+            tokenizer_id=tokenizer_id,
+            token_cap=token_cap,
+        )
         print(json.dumps(asdict(pair_stats), indent=2))
         if pair_stats.pairs_written == 0:
             print("no task has both a win and a real loss", file=sys.stderr)

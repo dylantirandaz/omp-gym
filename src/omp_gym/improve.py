@@ -31,11 +31,13 @@ as you go. The wall clock is limited; prefer cheap experiments
 first.
 
 Rules:
+- Within your first three actions, write {work_dir}/summary.md
+  with your plan, and update it after every verb with what you
+  ran, exact numbers (rewards, losses, costs), and what should
+  happen next. The clock may cut the session at any moment, so
+  the summary must always reflect the current state.
 - After each verb, read its output and check the ledger entry.
 - Keep working notes in {work_dir}/notes.md as you go.
-- When the goal is met or the budget is spent, write
-  {work_dir}/summary.md: what you ran, exact numbers (rewards,
-  losses, costs), and what should happen next.
 - Judge only by test rewards and measured metrics.
 """
 
@@ -83,22 +85,40 @@ def run_improve(
         str(max_time),
     ]
     started = time.monotonic()
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        timeout=max_time + 120,
-    )
+    timed_out = False
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=max_time + 120,
+        )
+        exit_code = completed.returncode
+        stdout = completed.stdout
+        stderr = completed.stderr
+    except subprocess.TimeoutExpired as timeout:
+        timed_out = True
+        exit_code = -1
+        stdout = (
+            timeout.stdout.decode()
+            if isinstance(timeout.stdout, bytes)
+            else timeout.stdout or ""
+        )
+        stderr = (
+            timeout.stderr.decode()
+            if isinstance(timeout.stderr, bytes)
+            else timeout.stderr or ""
+        )
     duration = time.monotonic() - started
-    (work_dir / "events.jsonl").write_text(completed.stdout)
-    if completed.stderr:
-        (work_dir / "stderr.log").write_text(completed.stderr)
+    (work_dir / "events.jsonl").write_text(stdout)
+    if stderr:
+        (work_dir / "stderr.log").write_text(stderr)
 
     entries_after, _ = read_ledger(ledger_path)
     summary = (work_dir / "summary.md").is_file()
     result = ImproveResult(
         work_dir=str(work_dir),
-        exit_code=completed.returncode,
+        exit_code=exit_code,
         duration_seconds=round(duration, 1),
         ledger_entries_before=len(entries_before),
         ledger_entries_after=len(entries_after),
@@ -113,6 +133,7 @@ def run_improve(
             "duration_seconds": result.duration_seconds,
             "verbs_recorded": len(entries_after) - len(entries_before),
             "summary_written": summary,
+            "timed_out": timed_out,
         },
         artifacts={"work_dir": str(work_dir)},
     )

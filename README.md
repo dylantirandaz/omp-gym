@@ -23,6 +23,10 @@ Seven verbs plus a dashboard, all feeding one ledger:
   loss, pass rate, cost per pass, tokens per solve.
 - `improve --goal "..." --budget N` — hands a research goal to an
   omp operator agent with the ledger as memory and a hard clock.
+  Verified live: the operator refreshed the dataset, root-caused
+  the local models' 0% pass rate to 1% dataset coverage (with
+  transcript evidence), and wrote a costed next-experiment
+  proposal to its summary.
 - `ui --port 8900` — web dashboard: leaderboard, adapters,
   timeline, episode browser with full transcripts.
 
@@ -208,10 +212,22 @@ other episode, so winners feed the next training export.
   no network calls; only `omp-gym run` talks to your model provider,
   the same as any omp use.
 
+## DPO, honestly measured
+
+- `export --pairs` builds chosen/rejected pairs from scored
+  episodes (wins versus real losses; provider errors excluded;
+  pairs over the token cap skipped).
+- Training runs a native MLX sigmoid-DPO loop (`--method dpo
+  --resume-adapter`), because the community trainer deadlocked on
+  this stack in three separate attempts. v4: loss 0.695 -> 0.000
+  and 100% preference accuracy in 176 s on the M3.
+- The bench verdict is the honest part: v4 is indistinguishable
+  from v2 at episode level (0% pass, ~300 tool calls both). The
+  mechanism works; 26 first-turn pairs are too thin to move
+  behavior. The ledger holds the full evidence chain.
+
 ## Limits of this version
 
-- DPO pair export works; local DPO training on the M3 is slow
-  enough with mlx-lm-lora that only short runs are practical.
 - Thinking blocks are not exported.
 - Tool results are cut at 4000 characters in the export.
 - Turns whose bare sample exceeds the token budget are skipped.

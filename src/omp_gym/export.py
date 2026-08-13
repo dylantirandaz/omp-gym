@@ -231,6 +231,7 @@ class PairStats:
     tasks_seen: int
     tasks_paired: int
     pairs_written: int
+    pairs_skipped_oversize: int
 
 
 def _episode_qualifies_as_loss(session_file: Path) -> bool:
@@ -266,6 +267,8 @@ def export_pairs(
     runs_dir: Path,
     out_dir: Path,
     max_pairs_per_task: int,
+    tokenizer_id: str,
+    token_cap: int,
 ) -> PairStats:
     """Build DPO preference pairs from scored episodes.
 
@@ -273,8 +276,17 @@ def export_pairs(
     (win, loss) combination becomes one pair: the shared prompt,
     the winner's first assistant turn as chosen, the loser's first
     assistant turn as rejected. Later-turn pairing needs aligned
-    contexts, which diverging trajectories do not have.
+    contexts, which diverging trajectories do not have. Pairs
+    longer than the token cap are skipped: one outlier pair once
+    padded a whole training run to 8320 tokens and stalled it.
     """
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_id)
+
+    def count(text: str) -> int:
+        return len(tokenizer(text, add_special_tokens=False).input_ids)
+
     wins: dict[str, list[tuple[str, str]]] = {}
     losses: dict[str, list[tuple[str, str]]] = {}
     tasks_seen: set[str] = set()
@@ -302,6 +314,7 @@ def export_pairs(
 
     documents: list[str] = []
     tasks_paired = 0
+    skipped_oversize = 0
     for task in sorted(tasks_seen):
         task_wins = wins.get(task, [])
         task_losses = losses.get(task, [])
@@ -313,6 +326,13 @@ def export_pairs(
             for _, rejected in task_losses:
                 if written >= max_pairs_per_task:
                     break
+                total_tokens = (
+                    count(SYSTEM_PROMPT + prompt)
+                    + max(count(chosen), count(rejected))
+                )
+                if total_tokens > token_cap:
+                    skipped_oversize += 1
+                    continue
                 documents.append(
                     json.dumps(
                         {
@@ -341,6 +361,7 @@ def export_pairs(
         tasks_seen=len(tasks_seen),
         tasks_paired=tasks_paired,
         pairs_written=len(documents),
+        pairs_skipped_oversize=skipped_oversize,
     )
 
 

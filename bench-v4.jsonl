@@ -1,0 +1,3 @@
+{"model": "omp-gym/mlx-community/Qwen2.5-0.5B-Instruct-4bit", "task": "csv-total", "trial": 1, "reward": 0.0, "duration_seconds": 4.4, "total_tokens": 7098, "cost_usd": 0.0, "tool_calls": 0, "error": null}
+{"model": "omp-gym/mlx-community/Qwen2.5-0.5B-Instruct-4bit", "task": "fizzbuzz-fix", "trial": 1, "reward": 0.0, "duration_seconds": 300.4, "total_tokens": 3714484, "cost_usd": 0.0, "tool_calls": 294, "error": null}
+{"model": "omp-gym/mlx-community/Qwen2.5-0.5B-Instruct-4bit", "task": "slugify", "trial": 1, "reward": 0.0, "duration_seconds": 3.0, "total_tokens": 7049, "cost_usd": 0.0, "tool_calls": 0, "error": null}

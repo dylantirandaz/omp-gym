@@ -178,51 +178,41 @@ def run_dpo_training(
 ) -> TrainReport:
     """Run one real DPO pass on preference pairs.
 
-    With --resume-adapter the DPO pass continues from an SFT
-    adapter, which is the standard SFT-then-DPO chain.
+    The community trainer deadlocked on this stack, so the sigmoid
+    DPO loss runs natively in MLX (see dpo.py). The resume adapter
+    is required: it seeds the policy and defines the frozen
+    reference, which makes this the standard SFT-then-DPO chain.
+    batch_size is accepted for CLI symmetry; pairs train one at a
+    time.
     """
+    from .dpo import train_dpo
+
     gpu = require_metal_gpu()
     _require_data(data_dir)
-    command = [
-        sys.executable,
-        "-m",
-        "mlx_lm_lora",
-        "train",
-        "--train",
-        "--train-mode",
-        "dpo",
-        "--model",
-        model,
-        "--data",
-        str(data_dir),
-        "--iters",
-        str(iterations),
-        "--adapter-path",
-        str(adapter_dir),
-        "--batch-size",
-        str(batch_size),
-        "--steps-per-report",
-        "1",
-        "--steps-per-eval",
-        str(iterations),
-        "--val-batches",
-        "4",
-        "--save-every",
-        str(iterations),
-        "--learning-rate",
-        "5e-6",
-    ]
-    if resume_adapter is not None:
-        if not resume_adapter.is_file():
-            raise TrainError(f"resume adapter {resume_adapter} missing")
-        command.extend(["--resume-adapter-file", str(resume_adapter)])
-    losses, val_losses = _stream_trainer(command)
-    return _finish_report(
-        model,
-        data_dir,
-        iterations,
-        adapter_dir,
-        losses,
-        val_losses,
-        gpu.device_name,
+    if resume_adapter is None or not resume_adapter.is_file():
+        raise TrainError(
+            "dpo requires --resume-adapter pointing at an SFT adapter"
+        )
+    metrics = train_dpo(
+        data_dir=data_dir,
+        model_id=model,
+        iterations=iterations,
+        adapter_dir=adapter_dir,
+        resume_adapter=resume_adapter,
+        device_name=gpu.device_name,
     )
+    report = TrainReport(
+        model=model,
+        data_dir=str(data_dir),
+        adapter_dir=str(adapter_dir),
+        iterations=iterations,
+        first_train_loss=metrics["first_train_loss"],
+        last_train_loss=metrics["last_train_loss"],
+        first_val_loss=metrics["first_val_loss"],
+        last_val_loss=metrics["last_val_loss"],
+        device_name=gpu.device_name,
+    )
+    (adapter_dir / "train_report.json").write_text(
+        json.dumps(asdict(report), indent=2)
+    )
+    return report
