@@ -205,6 +205,9 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
   envelope — a fenced `python3 test_x.py` / `pytest` command
   becomes a bash tool call — because that is the exact
   near-miss format the model produced in a real episode.
+- Dataset signal: 21,039 train samples are unique. 21,015 samples
+  contain tool calls and only 24 are prose-only. v3 plus v5 saw
+  about 400 samples, which is less than 2% of this train set.
 - RL: GRPO rounds on fizzbuzz-fix with the served 0.5B policy.
   Graded rewards (0.7 = 7 of 10 cases) arrived correctly. The
   group showed no variance, so no update happened and the ledger
@@ -215,6 +218,14 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
   mechanism and the honest no-signal path are verified; the
   blocker is policy entropy, which the base model has and the
   adapter lost to over-fitting.
+- RL on v5: three parallel rollouts overloaded the single-request
+  MLX server. Two rollouts were lost, but the old code accepted one
+  reward as a full group. Rollouts are now serial and every rollout
+  must return a trainable assistant turn. The same Apple M3 run
+  completed with three rewards: `[0.7, 0.7, 0.7]`. Direct reward
+  comparison found no variance and skipped the update. This also
+  prevents float round-off from starting a false update and loading
+  a second 3B model into memory.
 - Import: 968 Codex sessions converted to the omp schema; export
   with them grew the train set from 19,753 to 47,683 samples.
 - Mint: tasks mined from real failed sessions run end-to-end

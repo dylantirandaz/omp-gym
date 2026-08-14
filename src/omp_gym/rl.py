@@ -13,7 +13,6 @@ each group is sampled from the current policy weights.
 import json
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -51,6 +50,14 @@ class IterationMetrics:
     rewards: tuple[float, ...]
     mean_reward: float
     loss: float | None
+
+
+def _validate_parameters(group_size: int, iterations: int) -> None:
+    """Reject settings that cannot produce an RL update."""
+    if group_size < 2:
+        raise RlError("group size must be at least 2")
+    if iterations < 1:
+        raise RlError("iterations must be at least 1")
 
 
 def _start_policy_server(
@@ -174,14 +181,13 @@ def run_rl(
         raise RlError(f"bad task {task.path}: {task.reason}")
     if not (adapter_dir / "adapters.safetensors").is_file():
         raise RlError(f"no adapter at {adapter_dir}")
+    _validate_parameters(group_size, iterations)
 
     import os
 
     # Rollout diversity: the served policy defaults to temperature 0,
     # which makes every episode in a group identical.
     os.environ["OMP_GYM_SAMPLE_TEMP"] = "1.0"
-
-
 
     from transformers import AutoTokenizer
 
@@ -212,9 +218,19 @@ def run_rl(
     started = time.monotonic()
 
     for iteration in range(1, iterations + 1):
-        print(f"iteration {iteration}: serving policy and sampling {group_size} episodes")
+        print(
+            f"iteration {iteration}: serving policy and sampling "
+            f"{group_size} episodes"
+        )
+        source_adapter = (
+            out_adapter
+            if (out_adapter / "adapters.safetensors").is_file()
+            else adapter_dir
+        )
         server_proc, httpd, chosen_port = _start_policy_server(
-            base_model, out_adapter if (out_adapter / "adapters.safetensors").is_file() else adapter_dir, port
+            base_model,
+            source_adapter,
+            port,
         )
         serve_mod.ensure_provider(
             Path.home() / ".omp" / "agent" / "models.yml",
@@ -223,17 +239,14 @@ def run_rl(
             base_model,
         )
         try:
-            with ThreadPoolExecutor(max_workers=group_size) as pool:
-                futures = [
-                    pool.submit(
-                        run_episode,
-                        task,
-                        runs_dir,
-                        f"omp-gym/{base_model}",
-                    )
-                    for _ in range(group_size)
-                ]
-                episodes = [future.result() for future in futures]
+            episodes = [
+                run_episode(
+                    task,
+                    runs_dir,
+                    f"omp-gym/{base_model}",
+                )
+                for _ in range(group_size)
+            ]
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -242,9 +255,12 @@ def run_rl(
 
         rewards = []
         completions = []
-        for episode in episodes:
+        for rollout, episode in enumerate(episodes, start=1):
             if isinstance(episode, EpisodeFailure):
-                continue
+                raise RlError(
+                    f"iteration {iteration} rollout {rollout} failed: "
+                    f"{episode.reason}"
+                )
             reward = (
                 episode.reward_partial
                 if episode.reward_partial is not None
@@ -260,19 +276,24 @@ def run_rl(
                 Path(episode.session_file), prompt, tokenizer
             )
             if pair is None:
-                continue
+                raise RlError(
+                    f"iteration {iteration} rollout {rollout} "
+                    "had no trainable assistant turn"
+                )
             rewards.append(reward)
             completions.append(pair)
 
-        mean_reward = sum(rewards) / len(rewards) if rewards else 0.0
-        baseline = mean_reward
-        advantages = [r - baseline for r in rewards]
+        mean_reward = sum(rewards) / len(rewards)
+        has_reward_variance = any(
+            reward != rewards[0] for reward in rewards[1:]
+        )
+        advantages = [reward - mean_reward for reward in rewards]
         print(
             f"iteration {iteration}: rewards "
             f"{[round(r, 2) for r in rewards]} mean {mean_reward:.2f}"
         )
 
-        if not completions or all(a == 0 for a in advantages):
+        if not has_reward_variance:
             rounds.append(
                 IterationMetrics(
                     iteration=iteration,
