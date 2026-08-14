@@ -132,8 +132,14 @@ def run_training(
     adapter_dir: Path,
     batch_size: int,
     max_seq_length: int,
+    resume_adapter: Path | None = None,
 ) -> TrainReport:
-    """Run one real SFT LoRA pass and validate the loss curve."""
+    """Run one real SFT LoRA pass and validate the loss curve.
+
+    With resume_adapter, the pass continues from an existing
+    adapter — the way to close a coverage gap without relearning
+    what the base adapter already knows.
+    """
     gpu = require_metal_gpu()
     _require_data(data_dir)
     command = [
@@ -158,6 +164,12 @@ def run_training(
         "1",
         "--mask-prompt",
     ]
+    if resume_adapter is not None:
+        if not resume_adapter.is_file():
+            raise TrainError(
+                f"resume adapter {resume_adapter} is missing"
+            )
+        command.extend(["--resume-adapter-file", str(resume_adapter)])
     losses, val_losses = _stream_trainer(command)
     return _finish_report(
         model,

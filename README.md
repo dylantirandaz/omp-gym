@@ -199,6 +199,12 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
 - SAE preview: 4,096 features over 68,035 residual tokens of the
   tuned 0.5B; loss 0.307 -> 0.135 in 51 s. Most active features
   fire densely; the preview labels itself as such.
+- Retrain: v5 resumes v3 with 2x coverage (200 more iters, clean
+  loss 2.340 -> 0.884). The 3B policy still prefers chat over
+  tool calls at this coverage. The shim now accepts a fourth
+  envelope — a fenced `python3 test_x.py` / `pytest` command
+  becomes a bash tool call — because that is the exact
+  near-miss format the model produced in a real episode.
 - RL: GRPO rounds on fizzbuzz-fix with the served 0.5B policy.
   Graded rewards (0.7 = 7 of 10 cases) arrived correctly. The
   group showed no variance, so no update happened and the ledger

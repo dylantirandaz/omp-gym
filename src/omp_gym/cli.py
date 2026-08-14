@@ -144,6 +144,7 @@ def _cmd_train(
             adapter_dir=adapter_dir,
             batch_size=batch_size,
             max_seq_length=max_seq_length,
+            resume_adapter=resume_adapter,
         )
     append_entry(
         DEFAULT_LEDGER,

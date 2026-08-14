@@ -27,6 +27,11 @@ _TOOL_CALL_PATTERN = re.compile(
 _FENCED_CALL_PATTERN = re.compile(
     r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL
 )
+_SHELL_FENCE_PATTERN = re.compile(
+    r"```(?:python|bash|sh)?\s*\n?((?:python3?\s+test_\S+|pytest\b[^\n]*"
+    r"|npm\s+test[^\n]*|cargo\s+test[^\n]*)\s*\n?)```",
+    re.DOTALL,
+)
 
 TOOL_PROTOCOL = (
     "\n\nTo call a tool, write a <tool_call> block that contains one "
@@ -87,6 +92,15 @@ def _extract_tool_calls(text: str) -> tuple[str, list[dict]]:
                 calls.append(call)
         if calls:
             return pattern.sub("", text).strip(), calls
+
+    shell = _SHELL_FENCE_PATTERN.search(text)
+    if shell:
+        command = shell.group(1).strip()
+        call = _call_from_payload(
+            {"name": "bash", "arguments": {"command": command}}, 0
+        )
+        if call is not None:
+            return _SHELL_FENCE_PATTERN.sub("", text).strip(), [call]
 
     trimmed = text.strip()
     if trimmed.startswith("{") and trimmed.endswith("}"):
