@@ -179,7 +179,7 @@ def run_rl(
 
     # Rollout diversity: the served policy defaults to temperature 0,
     # which makes every episode in a group identical.
-    os.environ["OMP_GYM_SAMPLE_TEMP"] = "0.8"
+    os.environ["OMP_GYM_SAMPLE_TEMP"] = "1.0"
 
 
 

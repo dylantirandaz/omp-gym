@@ -196,6 +196,16 @@ def train_sae(
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
+    weights_path = out_dir / f"sae-weights-{stamp}.safetensors"
+    mx.save_safetensors(
+        str(weights_path),
+        {
+            "enc_w": params["enc_w"],
+            "enc_b": params["enc_b"],
+            "dec_w": params["dec_w"],
+            "dec_b": params["dec_b"],
+        },
+    )
     artifact = out_dir / f"sae-{stamp}.json"
     artifact.write_text(
         json.dumps(
@@ -209,6 +219,7 @@ def train_sae(
                 "loss_last": losses[-1],
                 "device": gpu.device_name,
                 "report": features,
+                "weights": str(weights_path),
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             },
             indent=2,
@@ -222,4 +233,5 @@ def train_sae(
         "loss_first": losses[0],
         "loss_last": losses[-1],
         "artifact": str(artifact),
+        "weights": str(weights_path),
     }

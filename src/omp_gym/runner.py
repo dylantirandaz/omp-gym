@@ -18,21 +18,34 @@ from .envfile import load_env_file
 from .task import TaskSpec
 
 _FAILED_PATTERN = re.compile(r"(\d+) of (\d+) cases failed")
+_PYTEST_PATTERN = re.compile(
+    r"(?:(\d+) failed)?,?\s*(?:(\d+) passed)?,?\s*(?:(\d+) error)?"
+)
 
 
 def _partial_credit(test_output: str) -> float | None:
     """Fraction of cases passed when the test reports a count.
 
-    Test outputs that carry "N of M cases failed" produce a graded
-    reward; others give None and only the binary reward applies.
+    Two shapes are recognized: "N of M cases failed" (custom test
+    scripts) and pytest's "X failed, Y passed" summary line. Others
+    give None and only the binary reward applies.
     """
     found = _FAILED_PATTERN.search(test_output)
-    if not found:
-        return None
-    failed, total = int(found.group(1)), int(found.group(2))
-    if total == 0:
-        return None
-    return (total - failed) / total
+    if found:
+        failed, total = int(found.group(1)), int(found.group(2))
+        if total:
+            return (total - failed) / total
+    for line in reversed(test_output.splitlines()):
+        if "passed" not in line and "failed" not in line:
+            continue
+        failed_m = re.search(r"(\d+) failed", line)
+        passed_m = re.search(r"(\d+) passed", line)
+        failed = int(failed_m.group(1)) if failed_m else 0
+        passed = int(passed_m.group(1)) if passed_m else 0
+        total = failed + passed
+        if total:
+            return passed / total
+    return None
 
 
 @dataclass(frozen=True)

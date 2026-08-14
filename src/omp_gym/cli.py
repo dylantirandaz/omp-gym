@@ -294,6 +294,29 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ledger", type=Path, default=DEFAULT_LEDGER
     )
 
+    steer_parser = commands.add_parser(
+        "steer", help="A/B test activation steering with an SAE feature"
+    )
+    steer_parser.add_argument(
+        "--weights",
+        type=Path,
+        required=True,
+        help="sae-weights-*.safetensors from a sae run",
+    )
+    steer_parser.add_argument("--feature", type=int, required=True)
+    steer_parser.add_argument(
+        "--model", default="mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+    )
+    steer_parser.add_argument("--adapter", type=Path, default=None)
+    steer_parser.add_argument("--alpha", type=float, default=2.0)
+    steer_parser.add_argument("--max-tokens", type=int, default=80)
+    steer_parser.add_argument(
+        "--out", type=Path, default=Path("experiments")
+    )
+    steer_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
     sae_parser = commands.add_parser(
         "sae", help="train a tiny SAE on residual activations"
     )
@@ -635,6 +658,53 @@ def _dispatch(args) -> None:
             config={"model": args.model, "adapter": str(args.adapter)},
             metrics={"layers": result["layers"]},
             artifacts={},
+        )
+        raise SystemExit(0)
+    if args.command == "steer":
+        from .steer import report_ab, run_ab
+
+        from .export import SYSTEM_PROMPT
+
+        def agent_prompt(task: str) -> str:
+            return SYSTEM_PROMPT + "\n\n" + task
+
+        prompts = [
+            agent_prompt(
+                "The test file test_fizzbuzz.py fails. "
+                "Find the bug in fizzbuzz.py and fix it."
+            ),
+            agent_prompt(
+                "Implement total_column in report.py so the tests pass."
+            ),
+            agent_prompt("Read the file main.py and explain it."),
+            agent_prompt(
+                "Write a function slugify that turns a title into a URL slug."
+            ),
+        ]
+        result = run_ab(
+            weights_path=args.weights,
+            feature=args.feature,
+            model_id=args.model,
+            adapter_dir=args.adapter,
+            alpha=args.alpha,
+            prompts=prompts,
+            max_tokens=args.max_tokens,
+        )
+        payload = report_ab(result, args.out)
+        append_entry(
+            args.ledger,
+            kind="steer",
+            config={
+                "feature": args.feature,
+                "alpha": args.alpha,
+                "model": args.model,
+            },
+            metrics={
+                "unsteered_tool_calls": result.unsteered_tool_calls,
+                "steered_tool_calls": result.steered_tool_calls,
+                "prompts": result.prompts,
+            },
+            artifacts={"steer": str(args.out)},
         )
         raise SystemExit(0)
     if args.command == "sae":

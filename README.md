@@ -199,19 +199,24 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
 - SAE preview: 4,096 features over 68,035 residual tokens of the
   tuned 0.5B; loss 0.307 -> 0.135 in 51 s. Most active features
   fire densely; the preview labels itself as such.
-- RL: two GRPO rounds on fizzbuzz-fix with the served 0.5B
-  policy. Graded rewards (0.7 = 7 of 10 cases) arrived correctly;
-  the group showed no variance, so no update happened and the
-  ledger says so. The mechanism is verified, including the honest
-  no-signal path. Sampling temperature injection is verified at
-  the shim.
+- RL: GRPO rounds on fizzbuzz-fix with the served 0.5B policy.
+  Graded rewards (0.7 = 7 of 10 cases) arrived correctly. The
+  group showed no variance, so no update happened and the ledger
+  says so. The real finding: at temperature 1.0 the overfit
+  adapter emits empty turns, so the 0.7 partial rewards come from
+  the unmodified buggy workspace passing 7 of 10 cases on its
+  own. GRPO cannot learn from a policy that says nothing. The
+  mechanism and the honest no-signal path are verified; the
+  blocker is policy entropy, which the base model has and the
+  adapter lost to over-fitting.
 - Import: 968 Codex sessions converted to the omp schema; export
   with them grew the train set from 19,753 to 47,683 samples.
-- Mint: tasks mined from real failed sessions; one ran
-  end-to-end and an API model passed it (reward 1.0). Workspaces
-  are reconstructed from write calls with session-relative paths;
-  tasks whose dependencies extend past what the session wrote are
-  labeled partial and often need their original repo.
+- Mint: tasks mined from real failed sessions run end-to-end
+  (minted-2: reward 1.0, 10/10 tests). Workspaces are rebuilt
+  from read and write tool calls, keyed to the session's working
+  directory, with the final content winning. Test commands are
+  validated against the reconstructed files; a `-k` selector
+  whose names do not appear is stripped.
 - Clusters: 2,040 tool errors, 497 edit mismatches, 313 provider
   errors, 29 user corrections over the harvest.
 
