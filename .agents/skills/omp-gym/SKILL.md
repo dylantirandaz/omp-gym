@@ -61,6 +61,29 @@ runs through `uv run omp-gym <verb>`.
    numbers from the ledger. Do not claim improvement without a
    bench delta.
 
+## Remote Metal jobs
+
+Use the registered `tailscale-compute` MCP server for long Metal
+jobs when a remote Apple GPU is available.
+
+1. Call `compute_status`. Check the target, platform, architecture,
+   memory, storage, and active jobs.
+2. Use `.tailscale-compute-ignore` to include only the required
+   dataset and source adapter. Never include `.env`.
+3. Call `compute_run` with `uv sync && uv run omp-gym preflight`.
+   The remote workload must report the selected Metal device.
+4. Call `compute_job_start` for training. Set
+   `PYTHONUNBUFFERED=1` so that job logs show live progress. Split
+   work that can exceed the 12-hour job limit into complete runs.
+5. Read `compute_job_status` and `compute_job_logs`. Keep the byte
+   offset from each log result. Do not stop another trainer until
+   the remote log shows the real model, source adapter, and training
+   loop.
+6. Call `compute_fetch` only after a successful terminal state.
+   Fetch the adapter and `train_report.json`.
+7. Serve and benchmark the fetched adapter against the prior
+   adapter. A completed training job is not proof of improvement.
+
 ## Rules
 
 - Keys live in the gitignored `.env`. Never print or commit them.

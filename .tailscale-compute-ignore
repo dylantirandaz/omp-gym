@@ -1,0 +1,7 @@
+# The remote trainer needs the SFT data and the v5 resume checkpoint.
+!dataset/
+!dataset/***
+!adapters/
+!adapters/v5/
+!adapters/v5/***
+adapters/*
