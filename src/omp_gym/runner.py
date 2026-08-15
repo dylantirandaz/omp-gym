@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -22,6 +23,37 @@ _FAILED_PATTERN = re.compile(r"(\d+) of (\d+) cases failed")
 _PYTEST_PATTERN = re.compile(
     r"(?:(\d+) failed)?,?\s*(?:(\d+) passed)?,?\s*(?:(\d+) error)?"
 )
+_PARENT_RUNTIME_ENV_NAMES = frozenset(
+    {
+        "PI_ARTIFACTS_DIR",
+        "PI_EVAL_LOCAL_ROOTS",
+        "PI_SESSION_FILE",
+    }
+)
+
+
+def _without_parent_runtime(
+    environment: Mapping[str, str],
+) -> dict[str, str]:
+    """Remove state that would nest an episode in the parent OMP session."""
+    return {
+        name: value
+        for name, value in environment.items()
+        if name not in _PARENT_RUNTIME_ENV_NAMES
+        and not name.startswith("PI_TOOL_BRIDGE_")
+    }
+
+
+def _episode_prompt(task: TaskSpec, workspace: Path) -> str:
+    """Add the task's explicit source context to the episode prompt."""
+    prompt = f"{TASK_PROMPT_PREFIX}\n\n{task.prompt}"
+    if not task.context_files:
+        return prompt
+    sections = [prompt, "\n\nWorkspace context:"]
+    for relative_path in task.context_files:
+        content = (workspace / relative_path).read_text()
+        sections.append(f"\n\nFile: {relative_path}\n{content}")
+    return "".join(sections)
 
 
 def _partial_credit(test_output: str) -> float | None:
@@ -103,11 +135,13 @@ def run_episode(
     episode_dir.mkdir(parents=True, exist_ok=False)
     shutil.copytree(task.workspace, workspace)
     session_dir.mkdir()
+    prompt = _episode_prompt(task, workspace)
+    (episode_dir / "prompt.txt").write_text(prompt + "\n")
 
     command = [
         "omp",
         "-p",
-        f"{TASK_PROMPT_PREFIX}\n\n{task.prompt}",
+        prompt,
         "--system-prompt",
         SYSTEM_PROMPT,
         "--cwd",
@@ -136,7 +170,7 @@ def run_episode(
         text=True,
         timeout=int(task.max_time) + 120,
         env={
-            **os.environ,
+            **_without_parent_runtime(os.environ),
             **load_env_file(Path(".env")),
             **(extra_env if extra_env else {}),
         },

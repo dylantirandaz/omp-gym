@@ -29,6 +29,7 @@ from typing import Protocol
 from .mint import _CORRECTION
 from .trajectory import (
     AssistantStep,
+    ToolCall,
     ToolResultStep,
     Trajectory,
     UserStep,
@@ -47,10 +48,15 @@ SYSTEM_PROMPT = (
     '"i": "purpose"}\n'
     'glob arguments: {"path": "glob pattern", "i": "purpose"}\n'
     "The environment answers with <tool_response>. Use relative paths. "
-    "Read source before edit. Inspect each result. Continue until tests pass."
+    "Read source and tests before the change. Run the failing tests. "
+    "For a small source file, use write with the full file content. "
+    "Inspect each result. Run the tests again. Do not report success until they pass."
 )
 TASK_PROMPT_PREFIX = "Complete the task in this repository."
 
+_PATCH_FILE_PATTERN = re.compile(
+    r"(?:^|\n)\s*(?:\*\*\* Begin Patch\s*\n)?\[([^#\]\r\n]+)#[0-9A-Fa-f]{4}\]"
+)
 TOOL_RESULT_LIMIT = 4000
 _WORKSPACE_PATH_PATTERN = re.compile(r"/(?:[^/\s'\":]+/)*ws(?=/|[\s'\":]|$)")
 TOKEN_SAFETY_MARGIN = 64
@@ -126,15 +132,64 @@ def _normalize_tool_arguments(
     return normalized
 
 
+def _canonical_training_call(
+    call: ToolCall,
+    authoring_workspace: Path | None,
+) -> tuple[str, dict[str, object]]:
+    """Render successful edits as simple full-file writes."""
+    arguments = _normalize_tool_arguments(call.arguments)
+    if call.name != "edit" or authoring_workspace is None:
+        return call.name, arguments
+    path_argument = arguments.get("path")
+    if isinstance(path_argument, str):
+        relative_path = path_argument
+    else:
+        patch = arguments.get("input")
+        if not isinstance(patch, str):
+            return call.name, arguments
+        found = _PATCH_FILE_PATTERN.search(patch)
+        if found is None:
+            return call.name, arguments
+        relative_path = found.group(1)
+    if Path(relative_path).is_absolute():
+        return call.name, arguments
+    workspace = authoring_workspace.resolve()
+    final_file = (workspace / relative_path).resolve()
+    if not final_file.is_relative_to(workspace) or not final_file.is_file():
+        return call.name, arguments
+    intent = arguments.get("i")
+    return (
+        "write",
+        {
+            "path": relative_path,
+            "content": final_file.read_text(),
+            "i": intent
+            if isinstance(intent, str) and intent
+            else "Write verified file",
+        },
+    )
+
+
+_AUTHORING_TOOL_NAMES = frozenset({"edit", "write"})
+
+
 def _render_messages(
     trajectory: Trajectory,
     prompt: str | None,
+    authoring_workspace: Path | None = None,
 ) -> list[dict[str, str]]:
     """Render one trajectory as merged chat messages.
 
     Scored episodes pass their task prompt. Harvested sessions pass
     None because their first user step already is the prompt.
     """
+    failed_authoring_call_ids = frozenset(
+        step.call_id
+        for step in trajectory.steps
+        if isinstance(step, ToolResultStep)
+        and step.is_error
+        and step.tool_name in _AUTHORING_TOOL_NAMES
+    )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
     ]
@@ -143,12 +198,21 @@ def _render_messages(
     for step in trajectory.steps:
         match step:
             case AssistantStep():
+                calls = tuple(
+                    call
+                    for call in step.tool_calls
+                    if call.call_id not in failed_authoring_call_ids
+                )
                 parts = [] if step.tool_calls else ([step.text] if step.text else [])
-                for call in step.tool_calls:
+                for call in calls:
+                    name, arguments = _canonical_training_call(
+                        call,
+                        authoring_workspace,
+                    )
                     payload = json.dumps(
                         {
-                            "name": call.name,
-                            "arguments": _normalize_tool_arguments(call.arguments),
+                            "name": name,
+                            "arguments": arguments,
                         }
                     )
                     parts.append(f"<tool_call>\n{payload}\n</tool_call>")
@@ -156,17 +220,16 @@ def _render_messages(
                 if content:
                     messages.append({"role": "assistant", "content": content})
             case ToolResultStep():
+                if step.call_id in failed_authoring_call_ids:
+                    continue
                 body = _elide_middle(
                     _normalize_workspace_paths(step.text),
                     TOOL_RESULT_LIMIT,
                 )
-                status = "error" if step.is_error else "ok"
                 messages.append(
                     {
                         "role": "user",
-                        "content": (
-                            f"<tool_response status={status}>\n{body}\n</tool_response>"
-                        ),
+                        "content": f"<tool_response>\n{body}\n</tool_response>",
                     }
                 )
             case UserStep():
@@ -260,7 +323,9 @@ def _collect_episode_messages(
             if prompt_file.is_file()
             else TASK_PROMPT_PREFIX
         )
-        rendered.append(_render_messages(trajectory, prompt))
+        rendered.append(
+            _render_messages(trajectory, prompt, episode_file.parent / "ws")
+        )
     return rendered, seen, torn
 
 

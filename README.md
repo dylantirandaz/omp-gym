@@ -77,12 +77,14 @@ per-turn SFT samples from scored episodes and from all omp
 sessions under `~/.omp/agent/sessions`. `--pairs` writes DPO
 preference pairs.
 
-`train --model M --iters N --adapter DIR [--method sft|dpo]
-[--resume-adapter FILE]` — train LoRA weights on the Metal GPU.
-`sft` uses mlx-lm. `dpo` uses a native MLX sigmoid-DPO loop and
-requires `--resume-adapter`. Training fails when the loss does not
-decrease, when a loss is NaN, or when the adapter file is not
-written.
+`train --model M --iters N --adapter DIR [--num-layers N]
+[--learning-rate R] [--method sft|dpo] [--resume-adapter FILE]`
+— train LoRA weights
+on the Metal GPU. SFT trains the last 16 layers by default. Set
+`--num-layers -1` to train all layers. `sft` uses mlx-lm. `dpo`
+uses a native MLX sigmoid-DPO loop and requires `--resume-adapter`.
+Training fails when the loss does not decrease, when a loss is
+NaN, or when the adapter file is not written.
 
 `serve --adapter DIR [--port N]` — serve an adapter behind an
 OpenAI-compatible endpoint and register it as an omp provider.

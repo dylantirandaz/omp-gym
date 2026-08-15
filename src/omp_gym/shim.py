@@ -22,7 +22,10 @@ import re
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_TOOL_CALL_PATTERN = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+_TOOL_CALL_PATTERN = re.compile(
+    r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+    re.DOTALL,
+)
 _FENCED_CALL_PATTERN = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 _SHELL_FENCE_PATTERN = re.compile(
     r"```(?:python|bash|sh)?\s*\n?((?:python3?\s+test_\S+|pytest\b[^\n]*"
@@ -62,9 +65,15 @@ def _available_tools(tools: object) -> tuple[AvailableTool, ...]:
             continue
         parameters = function.get("parameters")
         properties = (
-            parameters.get("properties") if isinstance(parameters, dict) else None
+            parameters.get("properties")
+            if isinstance(parameters, dict)
+            else None
         )
-        required = parameters.get("required") if isinstance(parameters, dict) else None
+        required = (
+            parameters.get("required")
+            if isinstance(parameters, dict)
+            else None
+        )
         argument_names = (
             frozenset(key for key in properties if isinstance(key, str))
             if isinstance(properties, dict)
@@ -88,11 +97,18 @@ def _resolve_tool_name(
     arguments: dict,
     available_tools: tuple[AvailableTool, ...],
 ) -> str | None:
-    """Resolve an exact name or one unique argument-shape match."""
-    for tool in available_tools:
-        if tool.name == generated_name:
-            return generated_name
+    """Resolve a valid exact name or one unique argument-shape match."""
     argument_names = frozenset(arguments)
+    for tool in available_tools:
+        if tool.name != generated_name:
+            continue
+        if (
+            not tool.argument_names
+            or tool.required_argument_names <= argument_names
+            and argument_names <= tool.argument_names
+        ):
+            return generated_name
+        break
     if not argument_names:
         return None
     matches = [
@@ -185,7 +201,7 @@ def _extract_tool_calls(
         if call is not None:
             return _SHELL_FENCE_PATTERN.sub("", text).strip(), [call]
 
-    trimmed = text.strip()
+    trimmed = text.strip().strip("\ufffd").strip()
     if trimmed.startswith("{") and trimmed.endswith("}"):
         try:
             payload = json.loads(trimmed)
@@ -197,11 +213,12 @@ def _extract_tool_calls(
     return trimmed, []
 
 
-def _rewrite_request(body: dict) -> dict:
+def _rewrite_request(body: dict, adapter_path: str | None = None) -> dict:
     """Move tools into the system message and force non-streaming.
 
-    A system prompt that already defines the tool-call protocol stays
-    unchanged. This keeps training and episode prompts identical.
+    A system or developer prompt that already defines the tool-call
+    protocol stays unchanged. This keeps training and episode prompts
+    identical.
     When OMP_GYM_SAMPLE_TEMP is set and the request carries no
     temperature, the shim injects it. RL sampling depends on
     rollout diversity; the server default of temperature 0 makes
@@ -214,12 +231,14 @@ def _rewrite_request(body: dict) -> dict:
     sample_temp = os.environ.get("OMP_GYM_SAMPLE_TEMP")
     if sample_temp and "temperature" not in upstream:
         upstream["temperature"] = float(sample_temp)
+    if adapter_path is not None:
+        upstream["adapters"] = adapter_path
     if isinstance(tools, list) and tools:
         messages = [dict(m) for m in upstream.get("messages", [])]
-        has_protocol = (
-            bool(messages)
-            and messages[0].get("role") == "system"
-            and "<tool_call>" in str(messages[0].get("content", ""))
+        has_protocol = any(
+            message.get("role") in {"system", "developer"}
+            and "<tool_call>" in str(message.get("content", ""))
+            for message in messages
         )
         if not has_protocol:
             suffix = _tools_to_system_suffix(tools)
@@ -304,7 +323,10 @@ def _sse_chunks(response: dict) -> list[dict]:
     return chunks
 
 
-def make_handler(backend_port: int) -> type[BaseHTTPRequestHandler]:
+def make_handler(
+    backend_port: int,
+    adapter_path: str | None = None,
+) -> type[BaseHTTPRequestHandler]:
     """Build the request handler bound to the backend port."""
 
     class ShimHandler(BaseHTTPRequestHandler):
@@ -336,7 +358,9 @@ def make_handler(backend_port: int) -> type[BaseHTTPRequestHandler]:
             body = json.loads(self.rfile.read(length))
             available_tools = _available_tools(body.get("tools"))
             wants_stream = bool(body.get("stream", False))
-            upstream_body = json.dumps(_rewrite_request(body)).encode()
+            upstream_body = json.dumps(
+                _rewrite_request(body, adapter_path)
+            ).encode()
             request = urllib.request.Request(
                 f"http://127.0.0.1:{backend_port}/v1/chat/completions",
                 data=upstream_body,
@@ -353,14 +377,18 @@ def make_handler(backend_port: int) -> type[BaseHTTPRequestHandler]:
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             for chunk in _sse_chunks(response):
-                self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+                data = json.dumps(chunk).encode()
+                self.wfile.write(b"data: " + data + b"\n\n")
             self.wfile.write(b"data: [DONE]\n\n")
 
     return ShimHandler
 
 
-def serve_shim(port: int, backend_port: int) -> None:
+def serve_shim(port: int, backend_port: int, adapter_path: str) -> None:
     """Block serving the shim until interrupted."""
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(backend_port))
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", port),
+        make_handler(backend_port, adapter_path),
+    )
     print(f"shim: listening on 127.0.0.1:{port} -> {backend_port}")
     server.serve_forever()

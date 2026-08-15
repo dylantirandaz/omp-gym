@@ -132,6 +132,8 @@ def run_training(
     adapter_dir: Path,
     batch_size: int,
     max_seq_length: int,
+    num_layers: int,
+    learning_rate: float,
     resume_adapter: Path | None = None,
 ) -> TrainReport:
     """Run one real SFT LoRA pass and validate the loss curve.
@@ -162,6 +164,10 @@ def run_training(
         str(max_seq_length),
         "--steps-per-report",
         "1",
+        "--num-layers",
+        str(num_layers),
+        "--learning-rate",
+        str(learning_rate),
         "--mask-prompt",
     ]
     if resume_adapter is not None:
@@ -188,6 +194,7 @@ def run_dpo_training(
     iterations: int,
     adapter_dir: Path,
     batch_size: int,
+    learning_rate: float,
     resume_adapter: Path | None,
 ) -> TrainReport:
     """Run one real DPO pass on preference pairs.
@@ -213,6 +220,7 @@ def run_dpo_training(
         iterations=iterations,
         adapter_dir=adapter_dir,
         resume_adapter=resume_adapter,
+        learning_rate=learning_rate,
         device_name=gpu.device_name,
     )
     report = TrainReport(

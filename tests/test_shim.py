@@ -58,6 +58,31 @@ class ToolCallExtractionTests(unittest.TestCase):
         self.assertEqual(content, "")
         self.assertEqual(calls[0]["function"]["name"], "bash")
 
+    def test_accepts_bare_json_between_replacement_markers(self) -> None:
+        payload = json.dumps(
+            {
+                "name": "write",
+                "arguments": {"path": "app.py", "content": "answer = 42\n"},
+            }
+        )
+
+        content, calls = _extract_tool_calls(
+            f"\ufffd\n{payload}\n\ufffd",
+            self.available_tools,
+        )
+
+        self.assertEqual(content, "")
+        self.assertEqual(calls[0]["function"]["name"], "write")
+
+    def test_maps_an_invalid_exact_name_by_argument_shape(self) -> None:
+        content, calls = self.extract(
+            "read",
+            {"path": "app.py", "content": "print('ok')"},
+        )
+
+        self.assertEqual(content, "")
+        self.assertEqual(calls[0]["function"]["name"], "write")
+
     def test_maps_an_unknown_name_by_command_shape(self) -> None:
         content, calls = self.extract(
             "run test.py",
@@ -105,16 +130,27 @@ class ToolCallExtractionTests(unittest.TestCase):
 
 
 class RequestRewriteTests(unittest.TestCase):
-    def test_keeps_an_explicit_tool_protocol_unchanged(self) -> None:
+    def test_finds_an_explicit_protocol_after_context(self) -> None:
         body = {
-            "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
+            "messages": [
+                {"role": "system", "content": "Runtime context."},
+                {"role": "developer", "content": SYSTEM_PROMPT},
+            ],
             "tools": [tool_schema("read", ("path",), ("path",))],
         }
 
         rewritten = _rewrite_request(body)
 
-        self.assertEqual(rewritten["messages"][0]["content"], SYSTEM_PROMPT)
+        self.assertEqual(rewritten["messages"], body["messages"])
         self.assertNotIn("tools", rewritten)
+
+    def test_forwards_the_adapter_path_to_mlx(self) -> None:
+        rewritten = _rewrite_request(
+            {"messages": []},
+            "adapters/tuned",
+        )
+
+        self.assertEqual(rewritten["adapters"], "adapters/tuned")
 
     def test_adds_tool_protocol_to_a_plain_system_prompt(self) -> None:
         body = {

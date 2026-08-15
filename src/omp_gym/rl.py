@@ -106,7 +106,8 @@ def _start_policy_server(
         stderr=subprocess.DEVNULL,
     )
     httpd = ThreadingHTTPServer(
-        ("127.0.0.1", chosen), shim_mod.make_handler(backend_port)
+        ("127.0.0.1", chosen),
+        shim_mod.make_handler(backend_port, str(adapter_dir)),
     )
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

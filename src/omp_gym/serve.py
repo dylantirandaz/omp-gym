@@ -121,7 +121,7 @@ def run_server(
         "stop with Ctrl+C"
     )
     try:
-        serve_shim(port, backend_port)
+        serve_shim(port, backend_port, str(adapter_dir))
     finally:
         backend.terminate()
         backend.wait(timeout=10)

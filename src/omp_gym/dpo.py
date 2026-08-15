@@ -117,6 +117,7 @@ def train_dpo(
     adapter_dir: Path,
     resume_adapter: Path,
     device_name: str,
+    learning_rate: float,
 ) -> dict:
     """Train and return the loss curves as a plain dict."""
     print(f"loading policy: {model_id}")
@@ -172,7 +173,7 @@ def train_dpo(
         return _dpo_loss(model, batch, ref_lps, DPO_BETA, pad_to)
 
     loss_and_grad = nn.value_and_grad(policy, loss_fn)
-    optimizer = Adam(learning_rate=5e-6)
+    optimizer = Adam(learning_rate=learning_rate)
 
     def mean_val_loss():
         total = sum(

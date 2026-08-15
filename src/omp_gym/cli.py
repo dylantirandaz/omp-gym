@@ -32,8 +32,6 @@ def _cmd_run(task_dir: Path, runs_dir: Path, model: str | None) -> int:
             file=sys.stderr,
         )
         return 1
-    prompt_file = Path(result.episode_dir) / "prompt.txt"
-    prompt_file.write_text(task.prompt + "\n")
     append_entry(
         DEFAULT_LEDGER,
         kind="run",
@@ -120,6 +118,8 @@ def _cmd_train(
     adapter_dir: Path,
     batch_size: int,
     max_seq_length: int,
+    num_layers: int,
+    learning_rate: float,
     method: str,
     resume_adapter: Path | None,
 ) -> int:
@@ -132,6 +132,7 @@ def _cmd_train(
             iterations=iterations,
             adapter_dir=adapter_dir,
             batch_size=batch_size,
+            learning_rate=learning_rate,
             resume_adapter=resume_adapter,
         )
     else:
@@ -144,6 +145,8 @@ def _cmd_train(
             adapter_dir=adapter_dir,
             batch_size=batch_size,
             max_seq_length=max_seq_length,
+            num_layers=num_layers,
+            learning_rate=learning_rate,
             resume_adapter=resume_adapter,
         )
     append_entry(
@@ -157,6 +160,8 @@ def _cmd_train(
             "resume_adapter": (
                 str(resume_adapter) if resume_adapter else None
             ),
+            "num_layers": num_layers,
+            "learning_rate": learning_rate,
         },
         metrics=dict(asdict(report)),
         artifacts={
@@ -545,6 +550,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     train_parser.add_argument("--batch-size", type=int, default=1)
     train_parser.add_argument("--max-seq-length", type=int, default=4096)
+    train_parser.add_argument("--num-layers", type=int, default=16)
+    train_parser.add_argument("--learning-rate", type=float, default=1e-5)
     train_parser.add_argument(
         "--method",
         choices=["sft", "dpo"],
@@ -603,6 +610,8 @@ def _dispatch(args) -> None:
                 args.adapter,
                 args.batch_size,
                 args.max_seq_length,
+                args.num_layers,
+                args.learning_rate,
                 args.method,
                 args.resume_adapter,
             )

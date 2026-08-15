@@ -122,6 +122,8 @@ def run_fix(
         adapter_dir=adapter_out,
         batch_size=1,
         max_seq_length=2048,
+        num_layers=16,
+        learning_rate=1e-5,
     )
 
     print("stage 5/5: bench the retrained policy")
