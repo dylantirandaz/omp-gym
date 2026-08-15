@@ -1,0 +1,10 @@
+prompt = """
+Implement price_after_discount in pricing/rules.py. Export the function
+from pricing/__init__.py. Keep the public names. Do not change
+test_pricing.py. Run `python3 test_pricing.py` and make sure that all
+tests pass.
+"""
+test_command = ["python3", "test_pricing.py"]
+context_files = ["pricing/__init__.py", "pricing/rules.py", "test_pricing.py"]
+tools = "read,write,bash"
+max_time = "180"

@@ -1,0 +1,10 @@
+prompt = """
+Fix latest_events in events.py. The function must follow its docstring.
+Keep the public data class and function names. Do not change
+test_events.py. Run `python3 test_events.py` and make sure that all
+tests pass.
+"""
+test_command = ["python3", "test_events.py"]
+context_files = ["events.py", "test_events.py"]
+tools = "read,write,bash"
+max_time = "180"

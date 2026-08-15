@@ -1,6 +1,7 @@
 .env
 .venv/
 runs/
+holdout-results/
 bench-*.md
 bench-*.jsonl
 dataset*/

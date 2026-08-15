@@ -1,0 +1,9 @@
+prompt = """
+Implement merge_intervals in intervals.py. Keep the public function
+name and return type. Do not change test_intervals.py. Run
+`python3 test_intervals.py` and make sure that all tests pass.
+"""
+test_command = ["python3", "test_intervals.py"]
+context_files = ["intervals.py", "test_intervals.py"]
+tools = "read,write,bash"
+max_time = "180"

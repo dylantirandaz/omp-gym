@@ -1,0 +1,9 @@
+prompt = """
+Implement LruCache in lru_cache.mjs. Keep the public class and method
+names. Do not change test_lru_cache.mjs. Run `node test_lru_cache.mjs`
+and make sure that all tests pass.
+"""
+test_command = ["node", "test_lru_cache.mjs"]
+context_files = ["lru_cache.mjs", "test_lru_cache.mjs"]
+tools = "read,write,bash"
+max_time = "180"

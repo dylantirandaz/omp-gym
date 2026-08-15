@@ -12,4 +12,7 @@
 !adapters/v7-stage2-0800/***
 !dataset-varied-runtime/
 !dataset-varied-runtime/***
+!adapters/v15-varied-runtime/
+!adapters/v15-varied-runtime/***
 adapters/*
+holdout-results/
