@@ -200,6 +200,8 @@ def _extract_tool_calls(
 def _rewrite_request(body: dict) -> dict:
     """Move tools into the system message and force non-streaming.
 
+    A system prompt that already defines the tool-call protocol stays
+    unchanged. This keeps training and episode prompts identical.
     When OMP_GYM_SAMPLE_TEMP is set and the request carries no
     temperature, the shim injects it. RL sampling depends on
     rollout diversity; the server default of temperature 0 makes
@@ -213,12 +215,19 @@ def _rewrite_request(body: dict) -> dict:
     if sample_temp and "temperature" not in upstream:
         upstream["temperature"] = float(sample_temp)
     if isinstance(tools, list) and tools:
-        suffix = _tools_to_system_suffix(tools)
         messages = [dict(m) for m in upstream.get("messages", [])]
-        if messages and messages[0].get("role") == "system":
-            messages[0]["content"] = str(messages[0].get("content", "")) + suffix
-        else:
-            messages.insert(0, {"role": "system", "content": suffix})
+        has_protocol = (
+            bool(messages)
+            and messages[0].get("role") == "system"
+            and "<tool_call>" in str(messages[0].get("content", ""))
+        )
+        if not has_protocol:
+            suffix = _tools_to_system_suffix(tools)
+            if messages and messages[0].get("role") == "system":
+                content = str(messages[0].get("content", ""))
+                messages[0]["content"] = content + suffix
+            else:
+                messages.insert(0, {"role": "system", "content": suffix})
         upstream["messages"] = messages
     return upstream
 

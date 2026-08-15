@@ -1,7 +1,12 @@
 import json
 import unittest
 
-from omp_gym.shim import _available_tools, _extract_tool_calls
+from omp_gym.export import SYSTEM_PROMPT
+from omp_gym.shim import (
+    _available_tools,
+    _extract_tool_calls,
+    _rewrite_request,
+)
 
 
 def tool_schema(
@@ -97,6 +102,32 @@ class ToolCallExtractionTests(unittest.TestCase):
 
         self.assertEqual(content, text)
         self.assertEqual(calls, [])
+
+
+class RequestRewriteTests(unittest.TestCase):
+    def test_keeps_an_explicit_tool_protocol_unchanged(self) -> None:
+        body = {
+            "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
+            "tools": [tool_schema("read", ("path",), ("path",))],
+        }
+
+        rewritten = _rewrite_request(body)
+
+        self.assertEqual(rewritten["messages"][0]["content"], SYSTEM_PROMPT)
+        self.assertNotIn("tools", rewritten)
+
+    def test_adds_tool_protocol_to_a_plain_system_prompt(self) -> None:
+        body = {
+            "messages": [{"role": "system", "content": "Code carefully."}],
+            "tools": [tool_schema("read", ("path",), ("path",))],
+        }
+
+        rewritten = _rewrite_request(body)
+
+        content = rewritten["messages"][0]["content"]
+        self.assertTrue(content.startswith("Code carefully."))
+        self.assertIn("<tool_call>", content)
+        self.assertIn("- read:", content)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .envfile import load_env_file
+from .export import SYSTEM_PROMPT, TASK_PROMPT_PREFIX
 from .task import TaskSpec
 
 _FAILED_PATTERN = re.compile(r"(\d+) of (\d+) cases failed")
@@ -106,7 +107,9 @@ def run_episode(
     command = [
         "omp",
         "-p",
-        task.prompt,
+        f"{TASK_PROMPT_PREFIX}\n\n{task.prompt}",
+        "--system-prompt",
+        SYSTEM_PROMPT,
         "--cwd",
         str(workspace),
         "--session-dir",
@@ -147,10 +150,7 @@ def run_episode(
     if session_file is None:
         return EpisodeFailure(
             task=task.name,
-            reason=(
-                f"omp exited with {omp_run.returncode} "
-                "and wrote no session"
-            ),
+            reason=(f"omp exited with {omp_run.returncode} and wrote no session"),
         )
 
     test_run = subprocess.run(
@@ -160,9 +160,7 @@ def run_episode(
         text=True,
         timeout=120,
     )
-    (episode_dir / "test_output.log").write_text(
-        test_run.stdout + test_run.stderr
-    )
+    (episode_dir / "test_output.log").write_text(test_run.stdout + test_run.stderr)
 
     partial = _partial_credit(test_run.stdout + test_run.stderr)
     record = EpisodeRecord(
@@ -176,7 +174,5 @@ def run_episode(
         reward_partial=partial,
         duration_seconds=round(duration, 1),
     )
-    (episode_dir / "episode.json").write_text(
-        json.dumps(asdict(record), indent=2)
-    )
+    (episode_dir / "episode.json").write_text(json.dumps(asdict(record), indent=2))
     return record

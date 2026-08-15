@@ -17,10 +17,11 @@ only the final assistant message produces loss.
 
 Tool calls are rendered as <tool_call> JSON blocks inside assistant
 content. Tool results are rendered as <tool_response> blocks inside
-user content. Thinking blocks are not exported.
+user content. Tool-step prose and thinking blocks are not exported.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -35,14 +36,23 @@ from .trajectory import (
 )
 
 SYSTEM_PROMPT = (
-    "You are a coding agent. You work in a repository through tools.\n"
-    "To call a tool, write a <tool_call> block that contains one JSON\n"
-    'object: {"name": ..., "arguments": {...}}. The environment answers\n'
-    "with a <tool_response> block. Available tools: read, bash, edit,\n"
-    "write, grep, glob. Work until the task is complete."
+    "You are a coding agent. Work in the current repository through tools.\n"
+    "Call a tool with one <tool_call> block that contains JSON:\n"
+    '{"name": "read", "arguments": {"path": "relative path", "i": "purpose"}}\n'
+    'bash arguments: {"command": "command", "i": "purpose"}\n'
+    'edit arguments: {"input": "hashline patch", "i": "purpose"}\n'
+    'write arguments: {"path": "relative path", "content": "full file", '
+    '"i": "purpose"}\n'
+    'grep arguments: {"pattern": "regex", "path": "relative path", '
+    '"i": "purpose"}\n'
+    'glob arguments: {"path": "glob pattern", "i": "purpose"}\n'
+    "The environment answers with <tool_response>. Use relative paths. "
+    "Read source before edit. Inspect each result. Continue until tests pass."
 )
+TASK_PROMPT_PREFIX = "Complete the task in this repository."
 
 TOOL_RESULT_LIMIT = 4000
+_WORKSPACE_PATH_PATTERN = re.compile(r"/(?:[^/\s'\":]+/)*ws(?=/|[\s'\":]|$)")
 TOKEN_SAFETY_MARGIN = 64
 MESSAGE_OVERHEAD_TOKENS = 8
 VALID_TRAJECTORY_SHARE = 10
@@ -93,7 +103,27 @@ def _elide_middle(text: str, limit: int) -> str:
     head = limit // 2
     tail = limit - head
     marker = f"\n...[elided {len(text) - limit} chars]...\n"
-    return text[:head] + marker + text[len(text) - tail:]
+    return text[:head] + marker + text[len(text) - tail :]
+
+
+def _normalize_workspace_paths(text: str) -> str:
+    """Replace one saved episode workspace root with the current root."""
+    return _WORKSPACE_PATH_PATTERN.sub(".", text)
+
+
+def _normalize_tool_arguments(
+    arguments: dict[str, object],
+) -> dict[str, object]:
+    """Replace saved episode workspace paths with relative paths."""
+    normalized = dict(arguments)
+    for name, value in arguments.items():
+        if not isinstance(value, str):
+            continue
+        relative_value = _normalize_workspace_paths(value)
+        if name == "path" and relative_value.startswith("./"):
+            relative_value = relative_value[2:]
+        normalized[name] = relative_value
+    return normalized
 
 
 def _render_messages(
@@ -113,30 +143,29 @@ def _render_messages(
     for step in trajectory.steps:
         match step:
             case AssistantStep():
-                parts = [step.text] if step.text else []
-                if step.thinking:
-                    parts.insert(
-                        0, f"<think>\n{step.thinking}\n</think>"
-                    )
+                parts = [] if step.tool_calls else ([step.text] if step.text else [])
                 for call in step.tool_calls:
                     payload = json.dumps(
-                        {"name": call.name, "arguments": call.arguments}
+                        {
+                            "name": call.name,
+                            "arguments": _normalize_tool_arguments(call.arguments),
+                        }
                     )
                     parts.append(f"<tool_call>\n{payload}\n</tool_call>")
                 content = "\n".join(parts)
                 if content:
-                    messages.append(
-                        {"role": "assistant", "content": content}
-                    )
+                    messages.append({"role": "assistant", "content": content})
             case ToolResultStep():
-                body = _elide_middle(step.text, TOOL_RESULT_LIMIT)
+                body = _elide_middle(
+                    _normalize_workspace_paths(step.text),
+                    TOOL_RESULT_LIMIT,
+                )
                 status = "error" if step.is_error else "ok"
                 messages.append(
                     {
                         "role": "user",
                         "content": (
-                            f"<tool_response status={status}>\n"
-                            f"{body}\n</tool_response>"
+                            f"<tool_response status={status}>\n{body}\n</tool_response>"
                         ),
                     }
                 )
@@ -197,12 +226,8 @@ def _split_turns(
         if costs[0] + turn_cost > budget:
             turn_budget = budget - costs[0] - MESSAGE_OVERHEAD_TOKENS
             turn = dict(turn)
-            turn["content"] = _elide_middle(
-                turn["content"], max(turn_budget * 3, 64)
-            )
-            turn_cost = (
-                count_tokens(turn["content"]) + MESSAGE_OVERHEAD_TOKENS
-            )
+            turn["content"] = _elide_middle(turn["content"], max(turn_budget * 3, 64))
+            turn_cost = count_tokens(turn["content"]) + MESSAGE_OVERHEAD_TOKENS
             skipped += 1
         used = costs[0] + turn_cost
         start = index
@@ -233,7 +258,7 @@ def _collect_episode_messages(
         prompt = (
             prompt_file.read_text().strip()
             if prompt_file.is_file()
-            else "Complete the task in this repository."
+            else TASK_PROMPT_PREFIX
         )
         rendered.append(_render_messages(trajectory, prompt))
     return rendered, seen, torn
@@ -314,9 +339,7 @@ def _episode_qualifies_as_loss(session_file: Path) -> bool:
     become the rejected side of a pair.
     """
     trajectory = parse_session(session_file)
-    has_assistant = any(
-        isinstance(step, AssistantStep) for step in trajectory.steps
-    )
+    has_assistant = any(isinstance(step, AssistantStep) for step in trajectory.steps)
     if not has_assistant:
         return False
     for line in session_file.read_text().splitlines():
@@ -374,9 +397,7 @@ def export_pairs(
             if prompt_file.is_file()
             else "Complete the task in this repository."
         )
-        first = _first_assistant_content(
-            _render_messages(trajectory, prompt)
-        )
+        first = _first_assistant_content(_render_messages(trajectory, prompt))
         if first is None:
             continue
         if float(record["reward"]) >= 1.0:
@@ -398,9 +419,8 @@ def export_pairs(
             for _, rejected in task_losses:
                 if written >= max_pairs_per_task:
                     break
-                total_tokens = (
-                    count(SYSTEM_PROMPT + prompt)
-                    + max(count(chosen), count(rejected))
+                total_tokens = count(SYSTEM_PROMPT + prompt) + max(
+                    count(chosen), count(rejected)
                 )
                 if total_tokens > token_cap:
                     skipped_oversize += 1
@@ -423,12 +443,8 @@ def export_pairs(
         train, valid = documents[:-valid_count], documents[-valid_count:]
     else:
         train, valid = documents, documents
-    (out_dir / "train.jsonl").write_text(
-        "\n".join(train) + ("\n" if train else "")
-    )
-    (out_dir / "valid.jsonl").write_text(
-        "\n".join(valid) + ("\n" if valid else "")
-    )
+    (out_dir / "train.jsonl").write_text("\n".join(train) + ("\n" if train else ""))
+    (out_dir / "valid.jsonl").write_text("\n".join(valid) + ("\n" if valid else ""))
     return PairStats(
         tasks_seen=len(tasks_seen),
         tasks_paired=tasks_paired,
@@ -491,10 +507,7 @@ def export_dataset(
 
     if len(splits) == 1:
         train_splits, valid_splits = list(splits), list(splits)
-        print(
-            "warning: one trajectory only; "
-            "valid set repeats the train set"
-        )
+        print("warning: one trajectory only; valid set repeats the train set")
     else:
         total_samples = sum(len(split.samples) for split in splits)
         valid_budget = max(1, total_samples // VALID_TRAJECTORY_SHARE)
@@ -507,9 +520,7 @@ def export_dataset(
             valid_splits.append(split)
             valid_taken += len(split.samples)
         held_out = {id(split) for split in valid_splits}
-        train_splits = [
-            split for split in splits if id(split) not in held_out
-        ]
+        train_splits = [split for split in splits if id(split) not in held_out]
 
     train = [sample for split in train_splits for sample in split.samples]
     valid = [sample for split in valid_splits for sample in split.samples]
