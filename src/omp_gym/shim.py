@@ -15,18 +15,15 @@ gap with the same convention the omp-gym adapters are trained on:
   the finished upstream response.
 """
 
+from dataclasses import dataclass
 import json
 import os
 import re
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-_TOOL_CALL_PATTERN = re.compile(
-    r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL
-)
-_FENCED_CALL_PATTERN = re.compile(
-    r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL
-)
+_TOOL_CALL_PATTERN = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+_FENCED_CALL_PATTERN = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 _SHELL_FENCE_PATTERN = re.compile(
     r"```(?:python|bash|sh)?\s*\n?((?:python3?\s+test_\S+|pytest\b[^\n]*"
     r"|npm\s+test[^\n]*|cargo\s+test[^\n]*)\s*\n?)```",
@@ -38,6 +35,74 @@ TOOL_PROTOCOL = (
     'JSON object: {"name": ..., "arguments": {...}}. '
     "Available tools:\n"
 )
+
+
+@dataclass(frozen=True)
+class AvailableTool:
+    """One offered tool and the keys in its argument object."""
+
+    name: str
+    argument_names: frozenset[str]
+    required_argument_names: frozenset[str]
+
+
+def _available_tools(tools: object) -> tuple[AvailableTool, ...]:
+    """Read valid function-tool shapes from an OpenAI request."""
+    if not isinstance(tools, list):
+        return ()
+    tools_by_name: dict[str, AvailableTool] = {}
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        function = tool.get("function")
+        if not isinstance(function, dict):
+            continue
+        name = function.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        parameters = function.get("parameters")
+        properties = (
+            parameters.get("properties") if isinstance(parameters, dict) else None
+        )
+        required = parameters.get("required") if isinstance(parameters, dict) else None
+        argument_names = (
+            frozenset(key for key in properties if isinstance(key, str))
+            if isinstance(properties, dict)
+            else frozenset()
+        )
+        required_argument_names = (
+            frozenset(item for item in required if isinstance(item, str))
+            if isinstance(required, list)
+            else frozenset()
+        )
+        tools_by_name[name] = AvailableTool(
+            name=name,
+            argument_names=argument_names,
+            required_argument_names=required_argument_names,
+        )
+    return tuple(tools_by_name.values())
+
+
+def _resolve_tool_name(
+    generated_name: str,
+    arguments: dict,
+    available_tools: tuple[AvailableTool, ...],
+) -> str | None:
+    """Resolve an exact name or one unique argument-shape match."""
+    for tool in available_tools:
+        if tool.name == generated_name:
+            return generated_name
+    argument_names = frozenset(arguments)
+    if not argument_names:
+        return None
+    matches = [
+        tool.name
+        for tool in available_tools
+        if tool.argument_names
+        and tool.required_argument_names <= argument_names
+        and argument_names <= tool.argument_names
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _tools_to_system_suffix(tools: list[dict]) -> str:
@@ -52,28 +117,40 @@ def _tools_to_system_suffix(tools: list[dict]) -> str:
     return TOOL_PROTOCOL + "\n".join(lines)
 
 
-def _call_from_payload(payload: object, index: int) -> dict | None:
-    """Build one OpenAI tool call from a parsed JSON payload."""
+def _call_from_payload(
+    payload: object,
+    index: int,
+    available_tools: tuple[AvailableTool, ...],
+) -> dict | None:
+    """Build one OpenAI tool call for an offered tool."""
     if not isinstance(payload, dict):
         return None
-    name = payload.get("name")
-    if not isinstance(name, str) or not name:
-        return None
+    generated_name = payload.get("name")
     arguments = payload.get("arguments")
+    if (
+        not isinstance(generated_name, str)
+        or not generated_name
+        or not isinstance(arguments, dict)
+    ):
+        return None
+    name = _resolve_tool_name(generated_name, arguments, available_tools)
+    if name is None:
+        return None
     return {
         "id": f"call_{index}",
         "type": "function",
         "function": {
             "name": name,
-            "arguments": json.dumps(
-                arguments if isinstance(arguments, dict) else {}
-            ),
+            "arguments": json.dumps(arguments),
         },
     }
 
 
-def _extract_tool_calls(text: str) -> tuple[str, list[dict]]:
-    """Split generated text into plain content and tool calls.
+def _extract_tool_calls(
+    text: str,
+    available_tools: tuple[AvailableTool, ...],
+) -> tuple[str, list[dict]]:
+    """Split generated text into plain content and valid tool calls.
 
     Three envelopes carry the same payload schema, depending on the
     prompt the model saw: <tool_call>{json}</tool_call> blocks (the
@@ -81,15 +158,19 @@ def _extract_tool_calls(text: str) -> tuple[str, list[dict]]:
     and a bare top-level JSON object (terse prompts).
     """
     for pattern in (_TOOL_CALL_PATTERN, _FENCED_CALL_PATTERN):
+        found_calls = list(pattern.finditer(text))
         calls: list[dict] = []
-        for index, found in enumerate(pattern.finditer(text)):
+        for index, found in enumerate(found_calls):
             try:
                 payload = json.loads(found.group(1))
             except json.JSONDecodeError:
-                continue
-            call = _call_from_payload(payload, index)
-            if call is not None:
-                calls.append(call)
+                calls = []
+                break
+            call = _call_from_payload(payload, index, available_tools)
+            if call is None:
+                calls = []
+                break
+            calls.append(call)
         if calls:
             return pattern.sub("", text).strip(), calls
 
@@ -97,7 +178,9 @@ def _extract_tool_calls(text: str) -> tuple[str, list[dict]]:
     if shell:
         command = shell.group(1).strip()
         call = _call_from_payload(
-            {"name": "bash", "arguments": {"command": command}}, 0
+            {"name": "bash", "arguments": {"command": command}},
+            0,
+            available_tools,
         )
         if call is not None:
             return _SHELL_FENCE_PATTERN.sub("", text).strip(), [call]
@@ -108,7 +191,7 @@ def _extract_tool_calls(text: str) -> tuple[str, list[dict]]:
             payload = json.loads(trimmed)
         except json.JSONDecodeError:
             return trimmed, []
-        call = _call_from_payload(payload, 0)
+        call = _call_from_payload(payload, 0, available_tools)
         if call is not None:
             return "", [call]
     return trimmed, []
@@ -133,23 +216,24 @@ def _rewrite_request(body: dict) -> dict:
         suffix = _tools_to_system_suffix(tools)
         messages = [dict(m) for m in upstream.get("messages", [])]
         if messages and messages[0].get("role") == "system":
-            messages[0]["content"] = (
-                str(messages[0].get("content", "")) + suffix
-            )
+            messages[0]["content"] = str(messages[0].get("content", "")) + suffix
         else:
             messages.insert(0, {"role": "system", "content": suffix})
         upstream["messages"] = messages
     return upstream
 
 
-def _shimmed_response(upstream_response: dict) -> dict:
-    """Convert upstream text output into content plus tool calls."""
+def _shimmed_response(
+    upstream_response: dict,
+    available_tools: tuple[AvailableTool, ...],
+) -> dict:
+    """Convert upstream text output into valid tool calls."""
     response = dict(upstream_response)
     choices = []
     for choice in response.get("choices", []):
         message = dict(choice.get("message", {}))
         text = message.get("content") or ""
-        content, calls = _extract_tool_calls(text)
+        content, calls = _extract_tool_calls(text, available_tools)
         message["content"] = content if content else None
         if calls:
             message["tool_calls"] = calls
@@ -241,6 +325,7 @@ def make_handler(backend_port: int) -> type[BaseHTTPRequestHandler]:
                 return
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length))
+            available_tools = _available_tools(body.get("tools"))
             wants_stream = bool(body.get("stream", False))
             upstream_body = json.dumps(_rewrite_request(body)).encode()
             request = urllib.request.Request(
@@ -250,7 +335,7 @@ def make_handler(backend_port: int) -> type[BaseHTTPRequestHandler]:
             )
             with urllib.request.urlopen(request, timeout=600) as upstream:
                 upstream_response = json.loads(upstream.read())
-            response = _shimmed_response(upstream_response)
+            response = _shimmed_response(upstream_response, available_tools)
             if not wants_stream:
                 self._send_json(200, response)
                 return
@@ -259,9 +344,7 @@ def make_handler(backend_port: int) -> type[BaseHTTPRequestHandler]:
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             for chunk in _sse_chunks(response):
-                self.wfile.write(
-                    b"data: " + json.dumps(chunk).encode() + b"\n\n"
-                )
+                self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
             self.wfile.write(b"data: [DONE]\n\n")
 
     return ShimHandler
@@ -269,8 +352,6 @@ def make_handler(backend_port: int) -> type[BaseHTTPRequestHandler]:
 
 def serve_shim(port: int, backend_port: int) -> None:
     """Block serving the shim until interrupted."""
-    server = ThreadingHTTPServer(
-        ("127.0.0.1", port), make_handler(backend_port)
-    )
+    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(backend_port))
     print(f"shim: listening on 127.0.0.1:{port} -> {backend_port}")
     server.serve_forever()

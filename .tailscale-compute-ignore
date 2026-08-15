@@ -1,7 +1,11 @@
-# The remote trainer needs the SFT data and the v5 resume checkpoint.
+# The remote trainer needs selected datasets and resume checkpoints.
 !dataset/
 !dataset/***
+!dataset-verified/
+!dataset-verified/***
 !adapters/
 !adapters/v5/
 !adapters/v5/***
+!adapters/v7-stage2-0800/
+!adapters/v7-stage2-0800/***
 adapters/*
