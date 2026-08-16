@@ -46,6 +46,31 @@ class CurriculumRenderingTests(unittest.TestCase):
         payload = json.loads(assistant_content)
         self.assertEqual(payload["arguments"]["path"], "src/main.py")
 
+    def test_redacts_credentials_from_tool_results(self) -> None:
+        trajectory = Trajectory(
+            steps=(
+                ToolResultStep(
+                    call_id="call_1",
+                    tool_name="bash",
+                    text=(
+                        "OPENROUTER_API_KEY=sk-or-v1-abcdef1234567890\n"
+                        "token: super-secret-value\n"
+                        "exit 0"
+                    ),
+                    is_error=False,
+                ),
+            ),
+            torn_lines=0,
+        )
+
+        messages = _render_messages(trajectory, TASK_PROMPT_PREFIX)
+
+        rendered = "\n".join(message["content"] for message in messages)
+        self.assertNotIn("sk-or-v1-abcdef1234567890", rendered)
+        self.assertNotIn("super-secret-value", rendered)
+        self.assertIn("[REDACTED]", rendered)
+        self.assertIn("exit 0", rendered)
+
     def test_terminal_turn_keeps_its_result_text(self) -> None:
         trajectory = Trajectory(
             steps=(

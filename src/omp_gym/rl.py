@@ -66,27 +66,25 @@ def _start_policy_server(
     """Start the model server plus shim.
 
     Returns the server process, the shim server, and the port the
-    shim actually binds (a fallback port may be chosen when the
-    requested one is taken).
+    shim actually binds. The shim binds directly instead of probing
+    first, so no other process can win the port in between.
     """
     import subprocess
     import sys
 
-    import socket as _socket
-
+    httpd = None
     chosen = None
     for candidate in (port, port + 2, port + 4):
-        probe = _socket.socket()
         try:
-            probe.bind(("127.0.0.1", candidate))
-            chosen = candidate
+            httpd = ThreadingHTTPServer(
+                ("127.0.0.1", candidate),
+                shim_mod.make_handler(candidate + 1, str(adapter_dir)),
+            )
         except OSError:
-            pass
-        finally:
-            probe.close()
-        if chosen is not None:
-            break
-    if chosen is None:
+            continue
+        chosen = candidate
+        break
+    if httpd is None or chosen is None:
         raise RlError(f"no free port near {port}")
     backend_port = chosen + 1
     server_proc = subprocess.Popen(
@@ -105,10 +103,6 @@ def _start_policy_server(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    httpd = ThreadingHTTPServer(
-        ("127.0.0.1", chosen),
-        shim_mod.make_handler(backend_port, str(adapter_dir)),
-    )
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
 
@@ -124,6 +118,8 @@ def _start_policy_server(
         except OSError:
             time.sleep(1)
     server_proc.terminate()
+    httpd.shutdown()
+    httpd.server_close()
     raise RlError("policy server did not become ready")
 
 
@@ -208,8 +204,20 @@ def run_rl(
             if (out_adapter / "adapters.safetensors").is_file()
             else adapter_dir
         )
+        adapter_weights = mx.load(str(source / "adapters.safetensors"))
+        policy_keys = {
+            name for name, _ in tree_flatten(loaded.parameters())
+        }
+        unmatched = [
+            name for name in adapter_weights if name not in policy_keys
+        ]
+        if unmatched:
+            raise RlError(
+                f"{len(unmatched)} adapter keys did not match the "
+                f"policy; first: {unmatched[0]}"
+            )
         loaded.load_weights(
-            str(source / "adapters.safetensors"), strict=False
+            list(adapter_weights.items()), strict=False
         )
         policy = loaded
         return loaded
@@ -258,10 +266,11 @@ def run_rl(
         completions = []
         for rollout, episode in enumerate(episodes, start=1):
             if isinstance(episode, EpisodeFailure):
-                raise RlError(
-                    f"iteration {iteration} rollout {rollout} failed: "
+                print(
+                    f"iteration {iteration} rollout {rollout} dropped: "
                     f"{episode.reason}"
                 )
+                continue
             reward = (
                 episode.reward_partial
                 if episode.reward_partial is not None
@@ -277,12 +286,18 @@ def run_rl(
                 Path(episode.session_file), prompt, tokenizer
             )
             if pair is None:
-                raise RlError(
-                    f"iteration {iteration} rollout {rollout} "
-                    "had no trainable assistant turn"
+                print(
+                    f"iteration {iteration} rollout {rollout} dropped: "
+                    "no trainable assistant turn"
                 )
+                continue
             rewards.append(reward)
             completions.append(pair)
+
+        if len(rewards) < 2:
+            raise RlError(
+                f"iteration {iteration}: fewer than 2 usable rollouts"
+            )
 
         mean_reward = sum(rewards) / len(rewards)
         has_reward_variance = any(

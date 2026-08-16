@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .ledger import read_ledger
+from .config import DEFAULT_MODEL, default_model
 from .report import _model_stats
 from .trajectory import AssistantStep, ToolResultStep, UserStep, parse_session
 
@@ -33,8 +34,39 @@ _TRAIN_LINE = re.compile(
 _VAL_LINE = re.compile(r"Iter (\d+): Val loss ([\d.]+)")
 
 
+_MODEL_CACHE_LIMIT = 2
+
+
+def _model_allowed(model_id: str) -> bool:
+    """Only the configured model or a local model directory may load.
+
+    The dashboard binds localhost, but any local page can fire GET
+    requests at it. An arbitrary model id would trigger a network
+    download of an attacker-chosen repository.
+    """
+    if model_id in (default_model(), DEFAULT_MODEL):
+        return True
+    candidate = Path(model_id)
+    return (
+        candidate.is_dir()
+        and candidate.resolve().is_relative_to(Path.cwd().resolve())
+    )
+
+
+def _adapter_allowed(adapter_dir: Path) -> bool:
+    """Only adapters inside the workspace may load."""
+    return (
+        adapter_dir.resolve().is_relative_to(Path.cwd().resolve())
+        and (adapter_dir / "adapters.safetensors").is_file()
+    )
+
+
 def _load_model(model_id: str, adapter_dir: Path | None):
-    """Load one model once per process. Apply LoRA layers on load."""
+    """Load one model once per process. Apply LoRA layers on load.
+
+    The cache keeps the two newest entries; every entry holds a
+    full model on a machine with limited unified memory.
+    """
     from mlx_lm import load as mlx_load
 
     cache_key = f"{model_id}::{adapter_dir}"
@@ -48,6 +80,8 @@ def _load_model(model_id: str, adapter_dir: Path | None):
             _LENS_CACHE[cache_key] = mlx_load(
                 model_id, adapter_path=str(adapter_dir)
             )
+        while len(_LENS_CACHE) > _MODEL_CACHE_LIMIT:
+            _LENS_CACHE.pop(next(iter(_LENS_CACHE)))
     return _LENS_CACHE[cache_key]
 
 
@@ -296,11 +330,13 @@ def _latest_sae() -> dict | None:
 
 
 def _sae_weights(weights_path: str):
-    """Load SAE weights once per process."""
+    """Load SAE weights once per process, keeping the two newest."""
     import mlx.core as mx
 
     if weights_path not in _SAE_CACHE:
         _SAE_CACHE[weights_path] = mx.load(weights_path)
+        while len(_SAE_CACHE) > _MODEL_CACHE_LIMIT:
+            _SAE_CACHE.pop(next(iter(_SAE_CACHE)))
     return _SAE_CACHE[weights_path]
 
 
@@ -478,7 +514,16 @@ def make_handler(ledger_path: Path, runs_dir: Path):
             self.end_headers()
             self.wfile.write(data)
 
+        def _host_allowed(self) -> bool:
+            """Reject DNS-rebound requests with a foreign Host header."""
+            host = self.headers.get("Host", "").rsplit(":", 1)[0]
+            return host in ("127.0.0.1", "localhost")
+
         def do_GET(self) -> None:
+            if not self._host_allowed():
+                self.send_response(403)
+                self.end_headers()
+                return
             parsed = urlparse(self.path)
             query = parse_qs(parsed.query)
             if parsed.path == "/":
@@ -537,15 +582,24 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                 if not prompt:
                     self._send_json({"error": "no prompt"})
                     return
-                model_id = query.get("model", [None])[0]
+                model_id = query.get("model", [None])[0] or default_model()
                 adapter_raw = query.get("adapter", [None])[0]
+                if not _model_allowed(model_id):
+                    self._send_json(
+                        {"error": "model not allowed; set it in gym.toml"}
+                    )
+                    return
+                if adapter_raw and not _adapter_allowed(Path(adapter_raw)):
+                    self._send_json(
+                        {"error": "adapter must be a workspace directory"}
+                    )
+                    return
                 try:
                     self._send_json(
                         _GPU_WORKER.submit(
                             _live_lens,
                             prompt,
-                            model_id
-                            or "mlx-community/Qwen2.5-3B-Instruct-4bit",
+                            model_id,
                             Path(adapter_raw) if adapter_raw else None,
                             3,
                         ).result()
@@ -560,10 +614,17 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                         {"error": "prompt and adapter are required"}
                     )
                     return
-                model_id = (
-                    query.get("model", [None])[0]
-                    or "mlx-community/Qwen2.5-Coder-3B-Instruct-4bit"
-                )
+                model_id = query.get("model", [None])[0] or default_model()
+                if not _model_allowed(model_id):
+                    self._send_json(
+                        {"error": "model not allowed; set it in gym.toml"}
+                    )
+                    return
+                if not _adapter_allowed(Path(adapter_raw)):
+                    self._send_json(
+                        {"error": "adapter must be a workspace directory"}
+                    )
+                    return
                 try:
                     self._send_json(
                         _GPU_WORKER.submit(

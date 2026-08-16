@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+ALLOWED_TEST_RUNNERS = frozenset({"python3", "python", "node", "pytest", "sh"})
+
+
 @dataclass(frozen=True)
 class TaskSpec:
     """One reproducible task for the environment."""
@@ -52,6 +55,13 @@ def load_task(task_dir: Path) -> TaskSpec | TaskLoadError:
         return TaskLoadError(
             task_dir, "test_command must be a non-empty list of strings"
         )
+    runner_name = Path(test_command[0]).name
+    if runner_name not in ALLOWED_TEST_RUNNERS:
+        return TaskLoadError(
+            task_dir,
+            "test_command must start with one of: "
+            + ", ".join(sorted(ALLOWED_TEST_RUNNERS)),
+        )
 
     context_files = raw.get("context_files", [])
     if not isinstance(context_files, list) or not all(
@@ -75,6 +85,10 @@ def load_task(task_dir: Path) -> TaskSpec | TaskLoadError:
     max_time = raw.get("max_time", "300")
     if not isinstance(tools, str) or not isinstance(max_time, str):
         return TaskLoadError(task_dir, "tools and max_time must be strings")
+    if not max_time.isdigit() or int(max_time) <= 0:
+        return TaskLoadError(
+            task_dir, "max_time must be a positive integer of seconds"
+        )
 
     return TaskSpec(
         name=task_dir.name,

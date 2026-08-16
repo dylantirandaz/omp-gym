@@ -33,6 +33,23 @@ uv run omp-gym report                         # compare adapters and models
 uv run omp-gym ui                             # dashboard on :8900
 ```
 
+## Choose your model
+
+The platform trains and serves any MLX-format open model. Write
+one line into a `gym.toml` file at the repository root:
+
+```toml
+model = "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
+```
+
+The value is a Hugging Face repository id or a local directory
+with an MLX model you provide (for example a model you converted
+with `mlx_lm.convert`). Every verb - `train`, `serve`, `gate`,
+`export`, `rl`, `fix`, `inspect`, `sae`, `steer` - uses it as the
+default model. Each `--model`, `--base-model`, or `--tokenizer`
+flag still overrides it per command. Without `gym.toml` the
+default is `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit`.
+
 ## Concepts
 
 **Task.** A directory with `task.toml` and `workspace/`. The
@@ -166,10 +183,7 @@ Pages for the repo.
 ## Serve, in the omp UI
 
 A served adapter appears in the omp model picker like any other
-provider:
-
-![omp model picker showing the omp-gym provider with the local
-adapter, marked free](assets/models-picker.png)
+provider, marked free.
 
 The shim in front of the model server parses the model's text into
 OpenAI tool calls, because the mlx-lm server drops tool calls when
@@ -181,16 +195,28 @@ JSON objects.
 
 Put provider keys in `.env` at the project root (`KEY=VALUE`
 lines). The file is gitignored. Every episode loads it; its values
-override the shell environment. A malformed line stops the run
-with the file and line number.
+are part of the episode environment. A malformed line stops the
+run with the file and line number.
+
+## Trust boundary
+
+Episodes are not sandboxed. `omp-gym run` starts a real omp
+session with auto-approval on this machine, in a copied workspace
+that is not a security boundary. The episode can run shell
+commands, read the filesystem, and see the provider keys from
+`.env`. Task test commands come from `task.toml` and run with your
+user account; the loader accepts only `python3`, `python`, `node`,
+`pytest`, and `sh` as the first word. Run only tasks and session
+imports that you trust, and use a dedicated key with a spend limit.
 
 ## Data locations
 
-`runs/`, `dataset/`, `dataset-dpo/`, `adapters/`, `experiments/`
-and `.env` are gitignored. Session data does not leave the
-machine. The exporter and the trainer make no network calls.
-Episodes contact the configured model provider, as any omp run
-does.
+`runs/`, `dataset*/`, `imported/`, `adapters/`, `experiments/`,
+`holdout-results/`, `gym.toml`, and `.env` are gitignored. The
+exporter redacts credential-shaped text and keeps datasets on this
+machine; the trainer makes no network calls beyond the model
+download. Episodes contact the configured model provider, as any
+omp run does.
 
 ## Measured results
 

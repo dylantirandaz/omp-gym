@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .bench import load_task_suite, render_report, run_benchmark
+from .config import default_model
 from .export import export_dataset
 from .ledger import DEFAULT_LEDGER, append_entry
 from .preflight import require_metal_gpu
@@ -253,6 +254,10 @@ def main() -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="omp-gym")
+    model_default = default_model()
+    model_help = (
+        "MLX model repo id or local path (default from gym.toml)"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("preflight", help="verify the Metal GPU")
@@ -289,7 +294,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     inspect_parser.add_argument("--prompt", required=True)
     inspect_parser.add_argument(
-        "--model", default="mlx-community/Qwen2.5-3B-Instruct-4bit"
+        "--model", default=model_default, help=model_help
     )
     inspect_parser.add_argument("--adapter", type=Path, default=None)
     inspect_parser.add_argument("--top-k", type=int, default=3)
@@ -311,7 +316,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     steer_parser.add_argument("--feature", type=int, required=True)
     steer_parser.add_argument(
-        "--model", default="mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+        "--model", default=model_default, help=model_help
     )
     steer_parser.add_argument("--adapter", type=Path, default=None)
     steer_parser.add_argument("--alpha", type=float, default=2.0)
@@ -328,7 +333,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sae_parser.add_argument("--data", type=Path, default=Path("dataset"))
     sae_parser.add_argument(
-        "--model", default="mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+        "--model", default=model_default, help=model_help
     )
     sae_parser.add_argument("--adapter", type=Path, default=None)
     sae_parser.add_argument(
@@ -342,7 +347,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "gate", help="flag adapters that memorize training tasks"
     )
     gate_parser.add_argument(
-        "--model", default="mlx-community/Qwen2.5-Coder-3B-Instruct-4bit"
+        "--model", default=model_default, help=model_help
     )
     gate_parser.add_argument("--adapter", type=Path, default=None)
     gate_parser.add_argument(
@@ -374,7 +379,8 @@ def _build_parser() -> argparse.ArgumentParser:
     rl_parser.add_argument("--task", type=Path, required=True)
     rl_parser.add_argument(
         "--base-model",
-        default="mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+        default=model_default,
+        help=model_help,
     )
     rl_parser.add_argument(
         "--adapter", type=Path, default=Path("adapters/v4")
@@ -397,7 +403,8 @@ def _build_parser() -> argparse.ArgumentParser:
     fix_parser.add_argument("--anchor", default="claude-haiku-4-5")
     fix_parser.add_argument(
         "--base-model",
-        default="mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+        default=model_default,
+        help=model_help,
     )
     fix_parser.add_argument(
         "--adapter", type=Path, default=Path("adapters/v4")
@@ -521,7 +528,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--adapter", type=Path, default=Path("adapters/v3")
     )
     serve_parser.add_argument(
-        "--base-model", default="mlx-community/Qwen2.5-3B-Instruct-4bit"
+        "--base-model", default=model_default, help=model_help
     )
     serve_parser.add_argument("--port", type=int, default=8800)
     serve_parser.add_argument("--model-id", default="local-v3")
@@ -548,7 +555,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     export_parser.add_argument(
         "--tokenizer",
-        default="mlx-community/Qwen2.5-3B-Instruct-4bit",
+        default=model_default,
         help="tokenizer that measures the sample token budget; "
         "must match the trainee model family",
     )
@@ -572,7 +579,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train_parser = commands.add_parser("train", help="train a LoRA adapter")
     train_parser.add_argument("--data", type=Path, default=Path("dataset"))
     train_parser.add_argument(
-        "--model", default="mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+        "--model", default=model_default, help=model_help
     )
     train_parser.add_argument("--iters", type=int, default=60)
     train_parser.add_argument(

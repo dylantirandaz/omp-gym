@@ -92,12 +92,14 @@ def _read_provider_error(session_file: Path) -> str | None:
 
 
 def load_task_suite(tasks_dir: Path) -> list[TaskSpec] | TaskLoadError:
-    """Load every task directory in the suite, or the first error."""
+    """Load every task under the root, or the first error.
+
+    Nested pools such as tasks/minted/ are included: any directory
+    below the root that holds a task.toml is one task.
+    """
     tasks: list[TaskSpec] = []
-    for entry in sorted(tasks_dir.iterdir()):
-        if not (entry / "task.toml").is_file():
-            continue
-        loaded = load_task(entry)
+    for config_path in sorted(tasks_dir.rglob("task.toml")):
+        loaded = load_task(config_path.parent)
         if isinstance(loaded, TaskLoadError):
             return loaded
         tasks.append(loaded)

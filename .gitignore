@@ -2,7 +2,7 @@
 .venv/
 runs/
 holdout-results/
-tasks/minted-rejected/
+tasks-rejected/
 bench-*.md
 bench-*.jsonl
 dataset*/
@@ -10,3 +10,6 @@ adapters/
 __pycache__/
 *.egg-info/
 experiments/
+gym.toml
+imported/
+src/inkling_quant_lab/

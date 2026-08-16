@@ -136,14 +136,14 @@ class ToolCallExtractionTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertIn("read the file", content)
 
-    def test_maps_an_invalid_exact_name_by_argument_shape(self) -> None:
+    def test_rejects_an_offered_name_with_wrong_arguments(self) -> None:
         content, calls = self.extract(
             "read",
             {"path": "app.py", "content": "print('ok')"},
         )
 
-        self.assertEqual(content, "")
-        self.assertEqual(calls[0]["function"]["name"], "write")
+        self.assertEqual(calls, [])
+        self.assertIn("app.py", content)
 
     def test_maps_an_unknown_name_by_command_shape(self) -> None:
         content, calls = self.extract(

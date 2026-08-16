@@ -2,13 +2,20 @@
 name = "omp-gym"
 version = "0.1.0"
 description = "Training environment for coding models, built on the omp tool surface."
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "mlx-lm>=0.24",
+    "mlx-lm>=0.24; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "transformers>=4.44",
 ]
 
 [project.scripts]
 omp-gym = "omp_gym.cli:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -16,3 +23,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/omp_gym"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

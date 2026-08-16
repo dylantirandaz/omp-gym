@@ -55,6 +55,25 @@ SYSTEM_PROMPT = (
     "For a small source file, use write with the full file content. "
     "Inspect each result. Run the tests again. Do not report success until they pass."
 )
+
+_KEY_LITERAL_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)((?:api[_-]?key|secret|token|password|authorization)"
+    r"[A-Za-z0-9_-]*\s*[=:]\s*)(\S+)"
+)
+
+
+def _redact(text: str) -> str:
+    """Replace credential-shaped text before it can train a model.
+
+    Session transcripts carry raw tool output. A key that appears
+    in an environment dump or a stack trace must not reach the
+    dataset.
+    """
+    text = _KEY_LITERAL_PATTERN.sub("[REDACTED]", text)
+    return _SECRET_ASSIGNMENT_PATTERN.sub(r"\1[REDACTED]", text)
+
+
 TASK_PROMPT_PREFIX = "Complete the task in this repository."
 
 _PATCH_FILE_PATTERN = re.compile(
@@ -241,13 +260,14 @@ def _render_messages(
 
     merged: list[dict[str, str]] = []
     for message in messages:
+        content = _redact(message["content"])
         if merged and merged[-1]["role"] == message["role"]:
             merged[-1] = {
                 "role": message["role"],
-                "content": merged[-1]["content"] + "\n\n" + message["content"],
+                "content": merged[-1]["content"] + "\n\n" + content,
             }
         else:
-            merged.append(message)
+            merged.append({"role": message["role"], "content": content})
     return merged
 
 

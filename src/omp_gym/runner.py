@@ -20,28 +20,39 @@ from .export import SYSTEM_PROMPT, TASK_PROMPT_PREFIX
 from .task import TaskSpec
 
 _FAILED_PATTERN = re.compile(r"(\d+) of (\d+) cases failed")
-_PYTEST_PATTERN = re.compile(
-    r"(?:(\d+) failed)?,?\s*(?:(\d+) passed)?,?\s*(?:(\d+) error)?"
-)
-_PARENT_RUNTIME_ENV_NAMES = frozenset(
-    {
-        "PI_ARTIFACTS_DIR",
-        "PI_EVAL_LOCAL_ROOTS",
-        "PI_SESSION_FILE",
-    }
+_UNITTEST_RAN_PATTERN = re.compile(r"Ran (\d+) tests? in")
+_UNITTEST_COUNT_PATTERN = re.compile(r"(?:failures|errors)=(\d+)")
+_EPISODE_HOST_ENV_NAMES = (
+    "PATH",
+    "HOME",
+    "USER",
+    "SHELL",
+    "TMPDIR",
+    "LANG",
+    "TERM",
+    "HF_HOME",
 )
 
 
-def _without_parent_runtime(
-    environment: Mapping[str, str],
+def _episode_environment(
+    host_environment: Mapping[str, str],
+    extra_env: dict[str, str] | None,
 ) -> dict[str, str]:
-    """Remove state that would nest an episode in the parent OMP session."""
-    return {
-        name: value
-        for name, value in environment.items()
-        if name not in _PARENT_RUNTIME_ENV_NAMES
-        and not name.startswith("PI_TOOL_BRIDGE_")
+    """Build the minimal child environment for one episode.
+
+    Episodes run real commands with auto-approval, so the child
+    gets only basic host variables plus the provider keys from
+    .env. The full parent environment, including unrelated
+    credentials and parent OMP session state, stays out.
+    """
+    environment = {
+        name: host_environment[name]
+        for name in _EPISODE_HOST_ENV_NAMES
+        if name in host_environment
     }
+    environment.update(load_env_file(Path(".env")))
+    environment.update(extra_env or {})
+    return environment
 
 
 def _episode_prompt(task: TaskSpec, workspace: Path) -> str:
@@ -59,15 +70,25 @@ def _episode_prompt(task: TaskSpec, workspace: Path) -> str:
 def _partial_credit(test_output: str) -> float | None:
     """Fraction of cases passed when the test reports a count.
 
-    Two shapes are recognized: "N of M cases failed" (custom test
-    scripts) and pytest's "X failed, Y passed" summary line. Others
-    give None and only the binary reward applies.
+    Three shapes are recognized: "N of M cases failed" (custom test
+    scripts), unittest's "Ran N tests" with a FAILED counts line,
+    and pytest's "X failed, Y passed" summary line. Others give
+    None and only the binary reward applies.
     """
     found = _FAILED_PATTERN.search(test_output)
     if found:
         failed, total = int(found.group(1)), int(found.group(2))
         if total:
             return (total - failed) / total
+    ran = _UNITTEST_RAN_PATTERN.search(test_output)
+    if ran:
+        total = int(ran.group(1))
+        if total:
+            failed = sum(
+                int(count)
+                for count in _UNITTEST_COUNT_PATTERN.findall(test_output)
+            )
+            return max(0, total - failed) / total
     for line in reversed(test_output.splitlines()):
         if "passed" not in line and "failed" not in line:
             continue
@@ -171,11 +192,7 @@ def run_episode(
             capture_output=True,
             text=True,
             timeout=deadline,
-            env={
-                **_without_parent_runtime(os.environ),
-                **load_env_file(Path(".env")),
-                **(extra_env if extra_env else {}),
-            },
+            env=_episode_environment(os.environ, extra_env),
         )
     except subprocess.TimeoutExpired as timeout_error:
         stdout = timeout_error.stdout
@@ -198,13 +215,22 @@ def run_episode(
             reason=(f"omp exited with {omp_run.returncode} and wrote no session"),
         )
 
-    test_run = subprocess.run(
-        list(task.test_command),
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        test_run = subprocess.run(
+            list(task.test_command),
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        (episode_dir / "test_output.log").write_text(
+            "test command exceeded the 120s deadline\n"
+        )
+        return EpisodeFailure(
+            task=task.name,
+            reason="test command exceeded the 120s deadline",
+        )
     (episode_dir / "test_output.log").write_text(test_run.stdout + test_run.stderr)
 
     partial = _partial_credit(test_run.stdout + test_run.stderr)

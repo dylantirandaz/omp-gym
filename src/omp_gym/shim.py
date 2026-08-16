@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -33,6 +34,7 @@ _SHELL_FENCE_PATTERN = re.compile(
     re.DOTALL,
 )
 _TAG_LINE_PATTERN = re.compile(r"\s*(?:\ufffd+|</?[A-Za-z_][\w-]*>)\s*")
+_MAX_REQUEST_BYTES = 32 * 1024 * 1024
 
 TOOL_PROTOCOL = (
     "\n\nTo call a tool, write one JSON object on its own line: "
@@ -98,7 +100,12 @@ def _resolve_tool_name(
     arguments: dict,
     available_tools: tuple[AvailableTool, ...],
 ) -> str | None:
-    """Resolve a valid exact name or one unique argument-shape match."""
+    """Resolve a valid exact name or one unique argument-shape match.
+
+    An offered name with a wrong argument shape is an invalid call.
+    It never reroutes to a different tool: episodes run with
+    auto-approval, so a malformed read must not become a bash call.
+    """
     argument_names = frozenset(arguments)
     for tool in available_tools:
         if tool.name != generated_name:
@@ -109,7 +116,7 @@ def _resolve_tool_name(
             and argument_names <= tool.argument_names
         ):
             return generated_name
-        break
+        return None
     if not argument_names:
         return None
     matches = [
@@ -263,17 +270,18 @@ def _rewrite_request(body: dict, adapter_path: str | None = None) -> dict:
     A system or developer prompt that already defines the tool-call
     protocol stays unchanged. This keeps training and episode prompts
     identical.
-    When OMP_GYM_SAMPLE_TEMP is set and the request carries no
-    temperature, the shim injects it. RL sampling depends on
-    rollout diversity; the server default of temperature 0 makes
-    every episode identical.
+    When OMP_GYM_SAMPLE_TEMP is set, the shim forces that sampling
+    temperature on every request. RL sampling depends on rollout
+    diversity; the served default of temperature 0 makes every
+    episode identical, and callers such as omp send an explicit
+    temperature of their own.
     """
     upstream = dict(body)
     tools = upstream.pop("tools", None)
     upstream.pop("tool_choice", None)
     upstream["stream"] = False
     sample_temp = os.environ.get("OMP_GYM_SAMPLE_TEMP")
-    if sample_temp and "temperature" not in upstream:
+    if sample_temp:
         upstream["temperature"] = float(sample_temp)
     if adapter_path is not None:
         upstream["adapters"] = adapter_path
@@ -402,8 +410,25 @@ def make_handler(
             if self.path != "/v1/chat/completions":
                 self._send_json(404, {"error": "not found"})
                 return
-            length = int(self.headers.get("Content-Length", "0"))
-            body = json.loads(self.rfile.read(length))
+            try:
+                length = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                self._send_json(400, {"error": "missing content length"})
+                return
+            if length <= 0:
+                self._send_json(400, {"error": "empty request body"})
+                return
+            if length > _MAX_REQUEST_BYTES:
+                self._send_json(413, {"error": "request body too large"})
+                return
+            try:
+                body = json.loads(self.rfile.read(length))
+            except json.JSONDecodeError:
+                self._send_json(400, {"error": "malformed JSON body"})
+                return
+            if not isinstance(body, dict):
+                self._send_json(400, {"error": "body must be an object"})
+                return
             available_tools = _available_tools(body.get("tools"))
             wants_stream = bool(body.get("stream", False))
             upstream_body = json.dumps(
@@ -414,8 +439,20 @@ def make_handler(
                 data=upstream_body,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(request, timeout=600) as upstream:
-                upstream_response = json.loads(upstream.read())
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=600
+                ) as upstream:
+                    upstream_response = json.loads(upstream.read())
+            except (
+                urllib.error.URLError,
+                json.JSONDecodeError,
+                OSError,
+            ) as error:
+                self._send_json(
+                    502, {"error": f"upstream request failed: {error}"}
+                )
+                return
             response = _shimmed_response(upstream_response, available_tools)
             if not wants_stream:
                 self._send_json(200, response)
