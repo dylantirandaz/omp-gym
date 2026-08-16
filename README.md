@@ -45,7 +45,7 @@ model = "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
 The value is a Hugging Face repository id or a local directory
 with an MLX model you provide (for example a model you converted
 with `mlx_lm.convert`). Every verb - `train`, `serve`, `gate`,
-`export`, `rl`, `fix`, `inspect`, `sae`, `steer` - uses it as the
+`export`, `rl`, `inspect`, `sae`, `steer` - uses it as the
 default model. Each `--model`, `--base-model`, or `--tokenizer`
 flag still overrides it per command. Without `gym.toml` the
 default is `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit`.
@@ -161,15 +161,11 @@ skipped.
 store to the omp session schema under `imported/`. Export with
 `--sessions imported`.
 
-`clusters` — group every session and failed episode by failure
-mode (tool errors, edit mismatches, provider errors, user
-corrections, gave up). Writes `experiments/clusters.json`; the
-dashboard shows it.
-
-`fix --task DIR --anchor MODEL` — measured repair loop: bench the
-local policy on the task, collect winning episodes from the anchor
-model, retrain the adapter, bench again, record the delta in the
-ledger.
+`clusters` — count keyword-frequency signals over sessions and
+failed episodes (tool errors, edit mismatches, provider errors,
+correction phrases, abandonment phrases). The counts are keyword
+hits, not verified failure modes. Writes
+`experiments/clusters.json`; the dashboard shows it.
 
 `doctor` — check omp, uv, Metal GPU, keys, sessions, disk. Prints
 the fix for each failure.
@@ -209,8 +205,11 @@ small whitelist). Task test commands come from `task.toml` and run
 with your user account; the loader accepts only `python3`,
 `python`, `node`, and `pytest` as the first word. Test files are
 hashed before each episode; an episode that changes them scores
-zero and its tests do not run. Run only tasks and session imports
-that you trust, and use a dedicated key with a spend limit.
+zero and its tests do not run. Reward needs positive evidence: a
+test run that exits 0 without a parseable passed-case count also
+scores zero, so a planted `os._exit(0)` cannot win. Run only tasks
+and session imports that you trust, and use a dedicated key with a
+spend limit.
 
 ## Data locations
 
@@ -311,10 +310,11 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
   their original repo to pass.
 - Harvested sessions go through a quality filter: sessions that
   ended as failures do not enter the SFT dataset. Pass
-  `--no-quality-filter` to include them. DPO pairs still use
-  losing episodes by design.
-- Thinking blocks are exported as `<think>` blocks when the
-  session recorded them.
+  `--no-quality-filter` to include them. Codex imports carry an
+  error signal only when the rollout recorded one. DPO pairs
+  still use losing episodes by design.
+- Thinking blocks are parsed and dropped; they never enter the
+  dataset.
 - Tool results longer than 4000 characters keep the head and the
   tail with an elision marker; the middle is dropped, because the
   error output lives at the end.

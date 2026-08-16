@@ -68,6 +68,15 @@ def _is_secret_path(path: str) -> bool:
     return name == ".env" or name.startswith(".env.") or name.endswith(".env")
 
 
+def _scrub_home(text: str) -> str:
+    """Replace the current home directory path with a tilde.
+
+    Minted files must not carry the absolute home path of the
+    machine that produced them.
+    """
+    return text.replace(str(Path.home()), "~")
+
+
 @dataclass(frozen=True)
 class MintedTask:
     """One task minted from a failed session."""
@@ -311,7 +320,7 @@ def mint_tasks(
             if ancestor_file is not None:
                 ancestor_file.unlink()
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(_redact(content))
+            target.write_text(_scrub_home(_redact(content)))
         argv = list(evidence["test_command"])
         test_target = None
         for part in argv:
@@ -353,14 +362,18 @@ def mint_tasks(
             fidelity = "complete"
         argv_toml = ", ".join(json.dumps(part) for part in argv)
         (task_dir / "task.toml").write_text(
-            f"prompt = {json.dumps(prompt)}\n"
-            f"test_command = [{argv_toml}]\n"
-            f'fidelity = "{fidelity}"\n'
+            _scrub_home(
+                f"prompt = {json.dumps(prompt)}\n"
+                f"test_command = [{argv_toml}]\n"
+                f'fidelity = "{fidelity}"\n'
+            )
         )
         (task_dir / "SOURCE.md").write_text(
-            _redact(
-                f"source session: {session_file}\n"
-                f"failure signals: {evidence['signals']}\n"
+            _scrub_home(
+                _redact(
+                    f"source session: {session_file}\n"
+                    f"failure signals: {evidence['signals']}\n"
+                )
             )
         )
         minted.append(

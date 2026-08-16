@@ -62,6 +62,9 @@ _TOKEN_LITERAL_PATTERN = re.compile(
     r"|ghp_[A-Za-z0-9]{20,}"
     r"|github_pat_[A-Za-z0-9_]{20,}"
     r"|gho_[A-Za-z0-9]{20,}"
+    r"|hf_[A-Za-z0-9]{20,}"
+    r"|gsk_[A-Za-z0-9]{20,}"
+    r"|AIza[0-9A-Za-z_-]{30,}"
     r"|xox[baprs]-[A-Za-z0-9-]{10,}"
     r"|AKIA[A-Z0-9]{16}"
     r"|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}[A-Za-z0-9_.-]*"
@@ -77,6 +80,10 @@ _SECRET_ASSIGNMENT_PATTERN = re.compile(
     r"\2\s*[=:]\s*)"
     r"(?:(['\"])(?![^'\"]*\()[^'\"]{8,}\3|(?!\S*\()\S{8,})"
 )
+_ENV_ASSIGNMENT_PATTERN = re.compile(
+    r"(\b[A-Z][A-Z0-9_]*_(?:API_KEY|APIKEY|TOKEN|SECRET|PASSWORD)"
+    r"\s*=\s*)\S{8,}"
+)
 
 
 def _redact(text: str) -> str:
@@ -84,15 +91,18 @@ def _redact(text: str) -> str:
 
     Session transcripts carry raw tool output. A key that appears
     in an environment dump or a stack trace must not reach the
-    dataset. Three rules apply. Known token literals always go.
+    dataset. Four rules apply. Known token literals always go.
     A Bearer header keeps the word Bearer and loses the token.
     An assignment goes only when the key is a whole secret word
     and the value is at least 8 characters with no parenthesis,
-    so code expressions survive.
+    so code expressions survive. An environment-style assignment
+    with an upper-case secret name keeps the name and loses the
+    value.
     """
     text = _TOKEN_LITERAL_PATTERN.sub("[REDACTED]", text)
     text = _BEARER_PATTERN.sub(r"\1[REDACTED]", text)
-    return _SECRET_ASSIGNMENT_PATTERN.sub(r"\1\3[REDACTED]\3", text)
+    text = _SECRET_ASSIGNMENT_PATTERN.sub(r"\1\3[REDACTED]\3", text)
+    return _ENV_ASSIGNMENT_PATTERN.sub(r"\1[REDACTED]", text)
 
 
 TASK_PROMPT_PREFIX = "Complete the task in this repository."
@@ -130,6 +140,7 @@ class ExportStats:
     """What the export run produced."""
 
     episodes_seen: int
+    episodes_excluded_holdout: int
     sessions_seen: int
     sessions_filtered: int
     sessions_excluded_holdout: int
@@ -385,17 +396,36 @@ def _split_turns(
     return TurnSplit(samples=tuple(samples), skipped_oversize=skipped)
 
 
+def _holdout_task_names(holdout_dir: Path) -> frozenset[str]:
+    """Directory names under the holdout dir; empty when absent."""
+    if not holdout_dir.is_dir():
+        return frozenset()
+    return frozenset(
+        entry.name for entry in holdout_dir.iterdir() if entry.is_dir()
+    )
+
+
 def _collect_episode_messages(
     runs_dir: Path,
     min_reward: float,
-) -> tuple[list[list[dict[str, str]]], int, int]:
-    """Render scored episodes: (rendered, seen, torn)."""
+    holdout_dir: Path,
+) -> tuple[list[list[dict[str, str]]], int, int, int]:
+    """Render scored episodes: (rendered, seen, excluded_holdout, torn).
+
+    An episode whose task carries the name of a holdout task never
+    enters the dataset: training on it would leak the benchmark.
+    """
+    holdout_names = _holdout_task_names(holdout_dir)
     rendered: list[list[dict[str, str]]] = []
     seen = 0
+    excluded_holdout = 0
     torn = 0
     for episode_file in sorted(runs_dir.glob("*/episode.json")):
         seen += 1
         record = json.loads(episode_file.read_text())
+        if str(record["task"]) in holdout_names:
+            excluded_holdout += 1
+            continue
         if float(record["reward"]) < min_reward:
             continue
         trajectory = parse_session(Path(record["session_file"]))
@@ -409,7 +439,7 @@ def _collect_episode_messages(
         rendered.append(
             _render_messages(trajectory, prompt, episode_file.parent / "ws")
         )
-    return rendered, seen, torn
+    return rendered, seen, excluded_holdout, torn
 
 
 def _session_failed(session_file: Path, trajectory: Trajectory) -> bool:
@@ -621,6 +651,7 @@ def export_dataset(
     tokenizer_id: str,
     token_cap: int,
     min_quality: bool = True,
+    holdout_dir: Path = Path("holdout-tasks"),
 ) -> ExportStats:
     """Collect both sources and write per-turn train/valid files.
 
@@ -630,9 +661,12 @@ def export_dataset(
     about one tenth of the samples.
     """
     count_tokens = load_token_counter(tokenizer_id)
-    episode_msgs, episodes_seen, episode_torn = _collect_episode_messages(
-        runs_dir, min_reward
-    )
+    (
+        episode_msgs,
+        episodes_seen,
+        episodes_excluded,
+        episode_torn,
+    ) = _collect_episode_messages(runs_dir, min_reward, holdout_dir)
     if sessions_root.is_dir():
         (
             session_msgs,
@@ -659,6 +693,7 @@ def export_dataset(
         (out_dir / "valid.jsonl").write_text("")
         return ExportStats(
             episodes_seen=episodes_seen,
+            episodes_excluded_holdout=episodes_excluded,
             sessions_seen=sessions_seen,
             sessions_filtered=sessions_filtered,
             sessions_excluded_holdout=excluded_holdout,
@@ -694,6 +729,7 @@ def export_dataset(
     (out_dir / "valid.jsonl").write_text("\n".join(valid) + "\n")
     return ExportStats(
         episodes_seen=episodes_seen,
+        episodes_excluded_holdout=episodes_excluded,
         sessions_seen=sessions_seen,
         sessions_filtered=sessions_filtered,
         sessions_excluded_holdout=excluded_holdout,

@@ -171,8 +171,9 @@ def run_rl(
     port: int,
     runs_dir: Path,
     ledger_path: Path,
+    sample_temperature: float = 0.7,
 ) -> dict:
-    """Run a GRPO round and record it in the ledger."""
+    """Run a REINFORCE round and record it in the ledger."""
     gpu = require_metal_gpu()
     task = load_task(task_dir)
     if isinstance(task, TaskLoadError):
@@ -184,8 +185,10 @@ def run_rl(
     import os
 
     # Rollout diversity: the served policy defaults to temperature 0,
-    # which makes every episode in a group identical.
-    os.environ["OMP_GYM_SAMPLE_TEMP"] = "1.0"
+    # which makes every episode in a group identical. Too much heat
+    # makes episodes ramble past the deadline, so the value is a
+    # parameter with a moderate default.
+    os.environ["OMP_GYM_SAMPLE_TEMP"] = str(sample_temperature)
 
     from transformers import AutoTokenizer
 

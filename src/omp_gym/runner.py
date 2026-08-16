@@ -24,6 +24,8 @@ from .task import TaskSpec
 _FAILED_PATTERN = re.compile(r"(\d+) of (\d+) cases failed")
 _UNITTEST_RAN_PATTERN = re.compile(r"Ran (\d+) tests? in")
 _UNITTEST_COUNT_PATTERN = re.compile(r"(?:failures|errors)=(\d+)")
+_ALL_PASSED_PATTERN = re.compile(r"all (\d+) cases passed")
+_PYTEST_PASSED_PATTERN = re.compile(r"(\d+) passed")
 _EPISODE_HOST_ENV_NAMES = (
     "PATH",
     "HOME",
@@ -104,6 +106,55 @@ def _partial_credit(test_output: str) -> float | None:
     return None
 
 
+def _test_evidence(test_output: str) -> int:
+    """Count of test cases the output proves ran and passed.
+
+    Three shapes give a positive count: a custom script's
+    "all N cases passed", unittest's "Ran N tests" followed by
+    "OK" with no "FAILED", and a pytest summary line "N passed"
+    with no "failed" and no "error" token. All other output,
+    including empty output, gives 0.
+    """
+    custom = _ALL_PASSED_PATTERN.search(test_output)
+    if custom:
+        return int(custom.group(1))
+    ran = _UNITTEST_RAN_PATTERN.search(test_output)
+    if ran:
+        after_ran = test_output[ran.end() :]
+        if "FAILED" not in test_output and re.search(r"\bOK\b", after_ran):
+            return int(ran.group(1))
+        return 0
+    for line in reversed(test_output.splitlines()):
+        if "passed" not in line:
+            continue
+        lowered = line.lower()
+        if "failed" in lowered or "error" in lowered:
+            return 0
+        passed = _PYTEST_PASSED_PATTERN.search(line)
+        if passed:
+            return int(passed.group(1))
+    return 0
+
+
+def _score_test_run(
+    returncode: int, test_output: str
+) -> tuple[float, float | None, int]:
+    """Score one test run from its exit code and captured output.
+
+    Reward 1.0 requires exit code 0 and positive test evidence.
+    Exit 0 without evidence scores 0.0 with no partial credit,
+    because output that proves nothing must earn nothing. On a
+    nonzero exit, partial credit reads the failure output as
+    before.
+    """
+    evidence = _test_evidence(test_output)
+    if returncode == 0:
+        if evidence >= 1:
+            return 1.0, _partial_credit(test_output), evidence
+        return 0.0, None, 0
+    return 0.0, _partial_credit(test_output), evidence
+
+
 def _protected_files(task: TaskSpec) -> tuple[str, ...]:
     """Workspace-relative paths of files the episode must not change.
 
@@ -170,6 +221,7 @@ class EpisodeRecord:
     reward_partial: float | None
     duration_seconds: float
     test_files_changed: bool = False
+    test_evidence: int = 0
 
 
 @dataclass(frozen=True)
@@ -310,9 +362,14 @@ def run_episode(
             task=task.name,
             reason="test command exceeded the 120s deadline",
         )
-    (episode_dir / "test_output.log").write_text(test_run.stdout + test_run.stderr)
+    test_output = test_run.stdout + test_run.stderr
+    reward, partial, evidence = _score_test_run(test_run.returncode, test_output)
+    if test_run.returncode == 0 and evidence == 0:
+        if test_output and not test_output.endswith("\n"):
+            test_output += "\n"
+        test_output += "test exited 0 without test evidence\n"
+    (episode_dir / "test_output.log").write_text(test_output)
 
-    partial = _partial_credit(test_run.stdout + test_run.stderr)
     record = EpisodeRecord(
         task=task.name,
         model=model if model is not None else "default",
@@ -320,9 +377,10 @@ def run_episode(
         session_file=str(session_file),
         omp_exit_code=omp_run.returncode,
         test_exit_code=test_run.returncode,
-        reward=1.0 if test_run.returncode == 0 else 0.0,
+        reward=reward,
         reward_partial=partial,
         duration_seconds=round(duration, 1),
+        test_evidence=evidence,
     )
     (episode_dir / "episode.json").write_text(json.dumps(asdict(record), indent=2))
     return record

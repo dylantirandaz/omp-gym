@@ -40,6 +40,28 @@ class TrainError(SystemExit):
         super().__init__(f"training failed: {reason}")
 
 
+def _validate_loss_curves(
+    losses: list[float], val_losses: list[float]
+) -> None:
+    """Stop when the loss curves show no real learning.
+
+    The train loss must go down. When val losses exist, the last
+    val loss must not be higher than the first: a rise means the
+    adapter fit the train set and got worse on held-out data.
+    """
+    if len(losses) < 2:
+        raise TrainError("no loss reports found in training output")
+    if losses[-1] >= losses[0]:
+        raise TrainError(
+            f"train loss did not go down: {losses[0]} -> {losses[-1]}"
+        )
+    if val_losses and val_losses[-1] > val_losses[0]:
+        raise TrainError(
+            "val loss went up: "
+            f"{val_losses[0]} -> {val_losses[-1]}"
+        )
+
+
 def _stream_trainer(
     command: list[str],
 ) -> tuple[list[float], list[float]]:
@@ -69,17 +91,12 @@ def _stream_trainer(
 
     if exit_code != 0:
         raise TrainError(f"trainer exited with {exit_code}")
-    if len(losses) < 2:
-        raise TrainError("no loss reports found in training output")
     if nan_lines:
         raise TrainError(
             f"{nan_lines} loss reports were NaN; "
             "a sample lost its completion to truncation"
         )
-    if losses[-1] >= losses[0]:
-        raise TrainError(
-            f"train loss did not go down: {losses[0]} -> {losses[-1]}"
-        )
+    _validate_loss_curves(losses, val_losses)
     return losses, val_losses
 
 
@@ -222,6 +239,12 @@ def run_dpo_training(
         resume_adapter=resume_adapter,
         learning_rate=learning_rate,
         device_name=gpu.device_name,
+    )
+    _validate_loss_curves(
+        [metrics["first_train_loss"], metrics["last_train_loss"]],
+        [metrics["first_val_loss"], metrics["last_val_loss"]]
+        if metrics["first_val_loss"] is not None
+        else [],
     )
     report = TrainReport(
         model=model,

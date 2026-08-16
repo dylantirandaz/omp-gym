@@ -1,9 +1,11 @@
-"""Cluster harvested sessions and episodes by failure mode.
+"""Count keyword-frequency signals in sessions and episodes.
 
-Rule-based, rule-visible: each cluster is a named detector over
-the session trace, so a user can see exactly why an episode sits
-in a cluster. Counts come with example artifact paths that open
-in the dashboard's transcript view.
+Rule-based, rule-visible: each signal is a named regular
+expression over the session trace. A user can open the pattern and
+see exactly which keywords put a session in a bucket. The counts
+are keyword hits, not verified failure diagnoses. Each count comes
+with example artifact paths that open in the dashboard's
+transcript view.
 """
 
 import json
@@ -11,7 +13,6 @@ import re
 import time
 from pathlib import Path
 
-from .mint import _CORRECTION
 from .trajectory import (
     AssistantStep,
     ToolResultStep,
@@ -19,40 +20,73 @@ from .trajectory import (
     parse_session,
 )
 
-_EDIT_FAIL = re.compile(r"not found|stale|anchor|old_string", re.IGNORECASE)
+# Anchored to the edit tool's real error strings, as recorded in
+# session data under runs/. A generic "not found" or "anchor" in a
+# tool result is not an edit failure.
+_EDIT_FAIL = re.compile(
+    r"payload line has no preceding hunk header"
+    r"|input must begin with \"\[PATH#HASH\]\""
+    r"|input header must be \[PATH\] or \[PATH#TAG\]"
+    r"|`(?:PUT|CUT) [^`]+` rejected"
+    r"|stale (?:tag|snapshot)",
+    re.IGNORECASE,
+)
+
+# Second-person or imperative correction phrasing. A bare "wrong"
+# or "stop" in a task statement is not a correction. mint.py gates
+# its correction signal on this pattern; keep it importable.
+_CORRECTION = re.compile(
+    r"\bno,? that'?s (?:wrong|not right|not it)\b"
+    r"|\bthat'?s (?:wrong|incorrect|not right)\b"
+    r"|\byou(?:'re| are) wrong\b"
+    r"|\byou broke\b"
+    r"|\bstill (?:fails?|failed|failing|broken)\b"
+    r"|\b(?:doesn'?t|does not|didn'?t|did not) work\b"
+    r"|\bnot what i (?:asked|wanted|meant|said)\b"
+    r"|\brevert (?:that|this|it|the)\b"
+    r"|\bundo that\b"
+    r"|\bstop (?:doing|changing|editing|touching|adding|rewriting)\b",
+    re.IGNORECASE,
+)
+
+# Phrases of abandonment. An apology followed by a fix is not a
+# giving-up signal.
 _GAVE_UP = re.compile(
-    r"\b(cannot (complete|finish)|unable to|i'?m sorry|beyond my)\b",
+    r"\b(?:cannot|can'?t) (?:proceed|complete|finish|continue)\b"
+    r"|\bunable to (?:proceed|complete|finish|continue)\b"
+    r"|\bgiv(?:e|ing) up\b"
+    r"|\bbeyond my (?:abilit|capabilit)",
     re.IGNORECASE,
 )
 
 
 def _classify_session(session_file: Path) -> dict[str, int]:
-    """Count failure-mode hits in one session."""
+    """Count keyword-signal hits in one session."""
     counts = {
-        "tool_errors": 0,
-        "edit_mismatches": 0,
-        "user_corrections": 0,
-        "gave_up": 0,
-        "provider_errors": 0,
+        "tool_error_results": 0,
+        "edit_error_keywords": 0,
+        "correction_keywords": 0,
+        "abandonment_keywords": 0,
+        "provider_error_lines": 0,
     }
     trajectory = parse_session(session_file)
     for step in trajectory.steps:
         if isinstance(step, ToolResultStep):
             if step.is_error:
-                counts["tool_errors"] += 1
+                counts["tool_error_results"] += 1
                 if _EDIT_FAIL.search(step.text):
-                    counts["edit_mismatches"] += 1
+                    counts["edit_error_keywords"] += 1
         elif isinstance(step, UserStep):
             if not step.text.startswith("<tool_response"):
-                counts["user_corrections"] += len(
+                counts["correction_keywords"] += len(
                     _CORRECTION.findall(step.text)
                 )
         elif isinstance(step, AssistantStep):
             if step.tool_calls == () and _GAVE_UP.search(step.text):
-                counts["gave_up"] += 1
+                counts["abandonment_keywords"] += 1
     for line in session_file.read_text().splitlines():
         if '"stopReason": "error"' in line or '"stopReason":"error"' in line:
-            counts["provider_errors"] += 1
+            counts["provider_error_lines"] += 1
     return counts
 
 
@@ -61,7 +95,7 @@ def compute_clusters(
     runs_dir: Path,
     out_dir: Path,
 ) -> dict:
-    """Cluster all known sessions and scored episodes."""
+    """Count keyword signals over all known sessions and episodes."""
     clusters: dict[str, dict] = {}
 
     def add(mode: str, source: str, hits: int) -> None:

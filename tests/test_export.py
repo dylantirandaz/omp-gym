@@ -7,6 +7,7 @@ from unittest import mock
 from omp_gym.export import (
     TASK_PROMPT_PREFIX,
     _canonical_training_call,
+    _collect_episode_messages,
     _collect_session_messages,
     _redact,
     _render_messages,
@@ -69,6 +70,9 @@ class RedactionTests(unittest.TestCase):
             "xoxb-1234567890-abcdef",
             "AKIAIOSFODNN7EXAMPLE",
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abcdefghij",
+            "hf_abcdefghijABCDEFGHIJ",
+            "gsk_abcdefghij1234567890",
+            "AIzaSyA-abcdefghijklmnopqrstuvwxyz1234",
         )
         for literal in literals:
             with self.subTest(literal=literal):
@@ -120,6 +124,24 @@ class RedactionTests(unittest.TestCase):
             (
                 "'access_token': 'abcdefgh1234'",
                 "'access_token': '[REDACTED]'",
+            ),
+        )
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(_redact(text), expected)
+
+    def test_upper_case_env_assignments_are_redacted(self) -> None:
+        cases = (
+            (
+                "PREFIX_API_KEY=abcdefgh12345678",
+                "PREFIX_API_KEY=[REDACTED]",
+            ),
+            ("HF_TOKEN=hf_abcdefghijABCDEFGHIJ", "HF_TOKEN=[REDACTED]"),
+            ("DB_PASSWORD=hunter2hunter2", "DB_PASSWORD=[REDACTED]"),
+            ("SERVICE_APIKEY=abcd1234efgh", "SERVICE_APIKEY=[REDACTED]"),
+            (
+                "APP_CLIENT_SECRET = supersecret99",
+                "APP_CLIENT_SECRET = [REDACTED]",
             ),
         )
         for text, expected in cases:
@@ -519,6 +541,96 @@ class HoldoutExclusionTests(unittest.TestCase):
         self.assertEqual(torn, 0)
         self.assertEqual(len(rendered), 1)
         self.assertNotIn("holdout-tasks", json.dumps(rendered))
+
+
+def _write_episode(runs: Path, sessions: Path, name: str, task: str) -> None:
+    """Write one graded episode record with a minimal session."""
+    episode_dir = runs / name
+    episode_dir.mkdir(parents=True)
+    session_file = sessions / f"{name}.jsonl"
+    _write_session(session_file, "Fix the bug.", "The bug is fixed.")
+    (episode_dir / "episode.json").write_text(
+        json.dumps(
+            {
+                "task": task,
+                "reward": 1.0,
+                "session_file": str(session_file),
+                "episode_dir": str(episode_dir),
+            }
+        )
+    )
+
+
+class EpisodeHoldoutExclusionTests(unittest.TestCase):
+    def test_holdout_named_episode_is_excluded(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            runs = root / "runs"
+            sessions = root / "sessions"
+            sessions.mkdir()
+            holdout = root / "holdout-tasks"
+            (holdout / "interval-union").mkdir(parents=True)
+            _write_episode(runs, sessions, "ep-1", "interval-union")
+            _write_episode(runs, sessions, "ep-2", "parser-fix")
+
+            rendered, seen, excluded, torn = _collect_episode_messages(
+                runs, 0.0, holdout
+            )
+
+        self.assertEqual(seen, 2)
+        self.assertEqual(excluded, 1)
+        self.assertEqual(torn, 0)
+        self.assertEqual(len(rendered), 1)
+
+    def test_missing_holdout_dir_means_no_exclusion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            runs = root / "runs"
+            sessions = root / "sessions"
+            sessions.mkdir()
+            _write_episode(runs, sessions, "ep-1", "interval-union")
+
+            rendered, seen, excluded, torn = _collect_episode_messages(
+                runs, 0.0, root / "holdout-tasks"
+            )
+
+        self.assertEqual(seen, 1)
+        self.assertEqual(excluded, 0)
+        self.assertEqual(torn, 0)
+        self.assertEqual(len(rendered), 1)
+
+    def test_export_dataset_counts_the_exclusion(self) -> None:
+        def counter(text: str) -> int:
+            return len(text) // 4 + 1
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            runs = root / "runs"
+            sessions = root / "sessions"
+            sessions.mkdir()
+            holdout = root / "holdout-tasks"
+            (holdout / "interval-union").mkdir(parents=True)
+            _write_episode(runs, sessions, "ep-1", "interval-union")
+            _write_episode(runs, sessions, "ep-2", "parser-fix")
+
+            with mock.patch(
+                "omp_gym.export.load_token_counter",
+                return_value=counter,
+            ):
+                stats = export_dataset(
+                    runs,
+                    root / "no-sessions",
+                    root / "out",
+                    0.0,
+                    "unused-tokenizer",
+                    2048,
+                    min_quality=False,
+                    holdout_dir=holdout,
+                )
+
+        self.assertEqual(stats.episodes_seen, 2)
+        self.assertEqual(stats.episodes_excluded_holdout, 1)
+        self.assertEqual(stats.trajectories_exported, 1)
 
 
 class DatasetSplitTests(unittest.TestCase):

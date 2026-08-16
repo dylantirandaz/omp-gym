@@ -5,6 +5,7 @@ the clustering commands treat imported sessions like native ones.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +18,17 @@ class ImportStats:
     files_seen: int
     files_written: int
     out_dir: str
+    results_without_error_signal: int
+    sessions_without_cwd: int
+
+
+@dataclass(frozen=True)
+class ConvertedSession:
+    """One converted session plus the measurement facts about it."""
+
+    entries: list[str]
+    results_without_error_signal: int
+    cwd: str | None
 
 
 def _text_entry(role: str, text: str) -> str:
@@ -31,10 +43,16 @@ def _text_entry(role: str, text: str) -> str:
     )
 
 
-def _convert_claude(session_file: Path) -> list[str]:
-    """Convert one Claude Code session file."""
+def _convert_claude(session_file: Path) -> ConvertedSession:
+    """Convert one Claude Code session file.
+
+    Claude records carry a top-level ``cwd`` field, which supplies the
+    session header. Tool results define ``is_error`` with an absent key
+    meaning success, so every result carries an explicit error signal.
+    """
     tool_names: dict[str, str] = {}
     entries: list[str] = []
+    cwd: str | None = None
     for line in session_file.read_text().splitlines():
         if not line.strip():
             continue
@@ -42,6 +60,8 @@ def _convert_claude(session_file: Path) -> list[str]:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if cwd is None and isinstance(record.get("cwd"), str):
+            cwd = record["cwd"]
         if record.get("type") not in ("user", "assistant"):
             continue
         message = record.get("message", {})
@@ -107,12 +127,73 @@ def _convert_claude(session_file: Path) -> list[str]:
                     }
                 )
             )
-    return entries
+    return ConvertedSession(entries, 0, cwd)
 
 
-def _convert_codex(session_file: Path) -> list[str]:
+_EXIT_CODE_LINE = re.compile(r"^Process exited with code (\d+)\s*$", re.MULTILINE)
+
+
+def _codex_output_text(output: object) -> str:
+    """Flatten one function_call_output payload into plain text."""
+    if isinstance(output, str):
+        return output
+    if isinstance(output, list):
+        return "\n".join(
+            str(part.get("text", ""))
+            for part in output
+            if isinstance(part, dict)
+        )
+    if output is None:
+        return ""
+    return str(output)
+
+
+def _parse_signal_dict(parsed: dict[str, object]) -> bool | None:
+    """Read an error signal from one decoded output object."""
+    exit_code = parsed.get("exit_code")
+    if isinstance(exit_code, int):
+        return exit_code != 0
+    if "error" in parsed:
+        return bool(parsed["error"])
+    timed_out = parsed.get("timed_out")
+    if isinstance(timed_out, bool):
+        return timed_out
+    return None
+
+
+def _codex_error_signal(text: str) -> bool | None:
+    """Extract the real error signal from one Codex tool output.
+
+    Rollouts record failure in three observed shapes: a header line
+    ``Process exited with code N``, a JSON object with ``exit_code``,
+    ``error``, or ``timed_out`` fields, or that same JSON object after
+    an ``Output:`` header line. Return None when no shape matches.
+    """
+    match = _EXIT_CODE_LINE.search(text)
+    if match:
+        return int(match.group(1)) != 0
+    stripped = text.strip()
+    if not stripped.startswith("{"):
+        _, sep, tail = text.partition("\nOutput:\n")
+        if not sep:
+            return None
+        stripped = tail.strip()
+        if not stripped.startswith("{"):
+            return None
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return _parse_signal_dict(parsed)
+
+
+def _convert_codex(session_file: Path) -> ConvertedSession:
     """Convert one Codex rollout file."""
     entries: list[str] = []
+    cwd: str | None = None
+    results_without_signal = 0
     for line in session_file.read_text().splitlines():
         if not line.strip():
             continue
@@ -120,9 +201,15 @@ def _convert_codex(session_file: Path) -> list[str]:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
+        payload = record.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        if record.get("type") in ("session_meta", "turn_context"):
+            if cwd is None and isinstance(payload.get("cwd"), str):
+                cwd = payload["cwd"]
+            continue
         if record.get("type") != "response_item":
             continue
-        payload = record.get("payload", {})
         kind = payload.get("type")
         if kind == "message":
             role = payload.get("role", "user")
@@ -158,6 +245,10 @@ def _convert_codex(session_file: Path) -> list[str]:
                 )
             )
         elif kind == "function_call_output":
+            text = _codex_output_text(payload.get("output"))
+            signal = _codex_error_signal(text)
+            if signal is None:
+                results_without_signal += 1
             entries.append(
                 json.dumps(
                     {
@@ -166,18 +257,13 @@ def _convert_codex(session_file: Path) -> list[str]:
                             "role": "toolResult",
                             "toolCallId": str(payload.get("call_id", "")),
                             "toolName": "tool",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": str(payload.get("output", "")),
-                                }
-                            ],
-                            "isError": False,
+                            "content": [{"type": "text", "text": text}],
+                            "isError": bool(signal),
                         },
                     }
                 )
             )
-    return entries
+    return ConvertedSession(entries, results_without_signal, cwd)
 
 
 def import_sessions(source: str, out_dir: Path) -> ImportStats:
@@ -191,18 +277,36 @@ def import_sessions(source: str, out_dir: Path) -> ImportStats:
     else:
         raise ValueError(f"unknown source: {source}")
     if not root.is_dir():
-        return ImportStats(source, 0, 0, str(out_dir))
+        return ImportStats(source, 0, 0, str(out_dir), 0, 0)
 
     target_root = out_dir / source
     target_root.mkdir(parents=True, exist_ok=True)
     seen = 0
     written = 0
+    results_without_signal = 0
+    sessions_without_cwd = 0
     for session_file in sorted(root.rglob("*.jsonl")):
         seen += 1
-        entries = convert(session_file)
-        if not entries:
+        converted = convert(session_file)
+        if not converted.entries:
             continue
+        results_without_signal += converted.results_without_error_signal
+        lines = converted.entries
+        if converted.cwd is None:
+            sessions_without_cwd += 1
+        else:
+            lines = [
+                json.dumps({"type": "session", "cwd": converted.cwd}),
+                *lines,
+            ]
         target = target_root / f"{session_file.stem}.jsonl"
-        target.write_text("\n".join(entries) + "\n")
+        target.write_text("\n".join(lines) + "\n")
         written += 1
-    return ImportStats(source, seen, written, str(target_root))
+    return ImportStats(
+        source,
+        seen,
+        written,
+        str(target_root),
+        results_without_signal,
+        sessions_without_cwd,
+    )

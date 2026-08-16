@@ -393,36 +393,12 @@ def _build_parser() -> argparse.ArgumentParser:
     rl_parser.add_argument("--port", type=int, default=8810)
     rl_parser.add_argument("--runs", type=Path, default=Path("runs"))
     rl_parser.add_argument(
-        "--ledger", type=Path, default=DEFAULT_LEDGER
+        "--sample-temp",
+        type=float,
+        default=0.7,
+        help="rollout sampling temperature",
     )
-
-    fix_parser = commands.add_parser(
-        "fix", help="measured before/after retrain on one task"
-    )
-    fix_parser.add_argument("--task", type=Path, required=True)
-    fix_parser.add_argument("--anchor", default="claude-haiku-4-5")
-    fix_parser.add_argument(
-        "--base-model",
-        default=model_default,
-        help=model_help,
-    )
-    fix_parser.add_argument(
-        "--adapter", type=Path, default=Path("adapters/v4")
-    )
-    fix_parser.add_argument(
-        "--out-adapter", type=Path, default=Path("adapters/v5")
-    )
-    fix_parser.add_argument("--train-iters", type=int, default=40)
-    fix_parser.add_argument("--win-episodes", type=int, default=2)
-    fix_parser.add_argument("--trials", type=int, default=2)
-    fix_parser.add_argument("--port", type=int, default=8820)
-    fix_parser.add_argument("--runs", type=Path, default=Path("runs"))
-    fix_parser.add_argument(
-        "--sessions",
-        type=Path,
-        default=Path.home() / ".omp" / "agent" / "sessions",
-    )
-    fix_parser.add_argument(
+    rl_parser.add_argument(
         "--ledger", type=Path, default=DEFAULT_LEDGER
     )
 
@@ -809,25 +785,7 @@ def _dispatch(args) -> None:
             iterations=args.iters,
             port=args.port,
             runs_dir=args.runs,
-            ledger_path=args.ledger,
-        )
-        print(json.dumps(summary, indent=2))
-        raise SystemExit(0)
-    if args.command == "fix":
-        from .fix import run_fix
-
-        summary = run_fix(
-            task_dir=args.task,
-            anchor_model=args.anchor,
-            base_model=args.base_model,
-            adapter_in=args.adapter,
-            adapter_out=args.out_adapter,
-            train_iters=args.train_iters,
-            win_episodes=args.win_episodes,
-            trials=args.trials,
-            port=args.port,
-            runs_dir=args.runs,
-            sessions_root=args.sessions,
+            sample_temperature=args.sample_temp,
             ledger_path=args.ledger,
         )
         print(json.dumps(summary, indent=2))

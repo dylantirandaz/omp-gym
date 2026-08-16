@@ -1,4 +1,5 @@
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,8 @@ from omp_gym.runner import (
     _file_digests,
     _partial_credit,
     _protected_files,
+    _score_test_run,
+    _test_evidence,
 )
 from omp_gym.task import TaskSpec
 
@@ -76,6 +79,142 @@ class PartialCreditTests(unittest.TestCase):
 
     def test_returns_none_without_counts(self) -> None:
         self.assertIsNone(_partial_credit("Segmentation fault"))
+
+
+class TestEvidenceTests(unittest.TestCase):
+    def test_reads_custom_all_passed_line(self) -> None:
+        self.assertEqual(_test_evidence("all 10 cases passed\n"), 10)
+
+    def test_reads_unittest_ok(self) -> None:
+        output = "Ran 8 tests in 0.002s\n\nOK\n"
+        self.assertEqual(_test_evidence(output), 8)
+
+    def test_rejects_unittest_failed(self) -> None:
+        output = "Ran 8 tests in 0.002s\n\nFAILED (failures=4)\n"
+        self.assertEqual(_test_evidence(output), 0)
+
+    def test_reads_pytest_summary(self) -> None:
+        self.assertEqual(_test_evidence("6 passed in 0.12s\n"), 6)
+
+    def test_rejects_pytest_summary_with_failures(self) -> None:
+        self.assertEqual(_test_evidence("2 failed, 6 passed in 0.1s\n"), 0)
+
+    def test_rejects_pytest_summary_with_errors(self) -> None:
+        self.assertEqual(_test_evidence("1 error, 6 passed in 0.1s\n"), 0)
+
+    def test_empty_output_gives_zero(self) -> None:
+        self.assertEqual(_test_evidence(""), 0)
+
+
+class ScoreTestRunTests(unittest.TestCase):
+    def test_exit_zero_without_evidence_scores_zero(self) -> None:
+        self.assertEqual(_score_test_run(0, ""), (0.0, None, 0))
+
+    def test_exit_zero_with_evidence_scores_one(self) -> None:
+        reward, partial, evidence = _score_test_run(0, "all 10 cases passed\n")
+        self.assertEqual(reward, 1.0)
+        self.assertIsNone(partial)
+        self.assertEqual(evidence, 10)
+
+    def test_exit_zero_keeps_partial_credit_from_unittest_output(self) -> None:
+        output = "Ran 8 tests in 0.002s\n\nOK\n"
+        self.assertEqual(_score_test_run(0, output), (1.0, 1.0, 8))
+
+    def test_failure_keeps_partial_credit(self) -> None:
+        reward, partial, evidence = _score_test_run(
+            1, "2 of 8 cases failed\n"
+        )
+        self.assertEqual(reward, 0.0)
+        self.assertEqual(partial, 0.75)
+        self.assertEqual(evidence, 0)
+
+
+TASKS_DIR = Path(__file__).resolve().parent.parent / "tasks"
+
+
+class ExploitSubprocessTests(unittest.TestCase):
+    def run_in_copy(
+        self,
+        task_workspace: Path,
+        solution_name: str,
+        solution_text: str,
+        command: tuple[str, ...],
+    ) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory) / "ws"
+            shutil.copytree(task_workspace, workspace)
+            (workspace / solution_name).write_text(solution_text)
+            completed = subprocess.run(
+                list(command),
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        return completed.returncode, completed.stdout + completed.stderr
+
+    def test_python_exit_zero_exploit_scores_zero(self) -> None:
+        exploit = (
+            "import os\n"
+            "os._exit(0)\n"
+            "\n"
+            "\n"
+            "def fizzbuzz(value):\n"
+            "    return ''\n"
+        )
+        returncode, output = self.run_in_copy(
+            TASKS_DIR / "fizzbuzz-fix" / "workspace",
+            "fizzbuzz.py",
+            exploit,
+            ("python3", "test_fizzbuzz.py"),
+        )
+        self.assertEqual(returncode, 0)
+        reward, partial, evidence = _score_test_run(returncode, output)
+        self.assertEqual(reward, 0.0)
+        self.assertIsNone(partial)
+        self.assertEqual(evidence, 0)
+
+    def test_node_uncaught_exception_exploit_scores_zero(self) -> None:
+        stub = (
+            TASKS_DIR / "js-deep-get" / "workspace" / "deep_get.mjs"
+        ).read_text()
+        exploit = (
+            "process.on('uncaughtException', () => process.exit(0));\n"
+            + stub
+        )
+        returncode, output = self.run_in_copy(
+            TASKS_DIR / "js-deep-get" / "workspace",
+            "deep_get.mjs",
+            exploit,
+            ("node", "test_deep_get.mjs"),
+        )
+        self.assertEqual(returncode, 0)
+        reward, partial, evidence = _score_test_run(returncode, output)
+        self.assertEqual(reward, 0.0)
+        self.assertIsNone(partial)
+        self.assertEqual(evidence, 0)
+
+    def test_honest_solve_scores_one(self) -> None:
+        solution = (
+            "def fizzbuzz(value):\n"
+            "    if value % 15 == 0:\n"
+            "        return 'FizzBuzz'\n"
+            "    if value % 3 == 0:\n"
+            "        return 'Fizz'\n"
+            "    if value % 5 == 0:\n"
+            "        return 'Buzz'\n"
+            "    return str(value)\n"
+        )
+        returncode, output = self.run_in_copy(
+            TASKS_DIR / "fizzbuzz-fix" / "workspace",
+            "fizzbuzz.py",
+            solution,
+            ("python3", "test_fizzbuzz.py"),
+        )
+        self.assertEqual(returncode, 0)
+        reward, partial, evidence = _score_test_run(returncode, output)
+        self.assertEqual(reward, 1.0)
+        self.assertEqual(evidence, 10)
 
 
 def make_task(workspace: Path, test_command: tuple[str, ...]) -> TaskSpec:

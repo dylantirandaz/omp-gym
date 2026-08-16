@@ -228,6 +228,31 @@ class RedactionTests(unittest.TestCase):
             self.assertNotIn("sk-or-abc12345678", raw["prompt"])
             self.assertIn("[REDACTED]", raw["prompt"])
 
+    def test_minted_text_hides_the_home_path(self) -> None:
+        home = str(Path.home())
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sessions = root / "sessions"
+            sessions.mkdir()
+            out = root / "tasks"
+            _write_session(
+                sessions,
+                "pytest tests/unit/test_x.py -q",
+                {"config.py": f"LOG_DIR = '{home}/logs'\n"},
+                prompt=f"Fix the logger under {home}/project.",
+            )
+            minted = mint_tasks(sessions, out, 5)
+            self.assertEqual(len(minted), 1)
+            task_dir = Path(minted[0].task_dir)
+            source = (task_dir / "SOURCE.md").read_text()
+            config = (task_dir / "workspace" / "config.py").read_text()
+            raw = tomllib.loads((task_dir / "task.toml").read_text())
+            self.assertNotIn(home, source)
+            self.assertNotIn(home, config)
+            self.assertNotIn(home, raw["prompt"])
+            self.assertIn("~/logs", config)
+            self.assertIn("~/project", raw["prompt"])
+
 
 if __name__ == "__main__":
     unittest.main()
