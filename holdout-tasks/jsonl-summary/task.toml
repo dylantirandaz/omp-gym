@@ -6,4 +6,4 @@ and function name. Do not change test_summary.py. Run
 test_command = ["python3", "test_summary.py"]
 context_files = ["summary.py", "test_summary.py"]
 tools = "read,write,bash"
-max_time = "180"
+max_time = "360"

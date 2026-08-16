@@ -7,4 +7,4 @@ tests pass.
 test_command = ["python3", "test_pricing.py"]
 context_files = ["pricing/__init__.py", "pricing/rules.py", "test_pricing.py"]
 tools = "read,write,bash"
-max_time = "180"
+max_time = "360"

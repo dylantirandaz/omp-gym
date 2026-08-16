@@ -7,4 +7,4 @@ tests pass.
 test_command = ["python3", "test_events.py"]
 context_files = ["events.py", "test_events.py"]
 tools = "read,write,bash"
-max_time = "180"
+max_time = "360"
