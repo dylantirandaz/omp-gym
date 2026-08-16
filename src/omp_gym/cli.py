@@ -53,7 +53,7 @@ def _cmd_run(task_dir: Path, runs_dir: Path, model: str | None) -> int:
 
 def _cmd_export(
     runs_dir: Path,
-    sessions_root: Path,
+    sessions_root: Path | None,
     out_dir: Path,
     min_reward: float,
     tokenizer_id: str,
@@ -101,7 +101,7 @@ def _cmd_export(
         kind="export",
         config={
             "runs": str(runs_dir),
-            "sessions": str(sessions_root),
+            "sessions": "" if sessions_root is None else str(sessions_root),
             "min_reward": min_reward,
             "tokenizer": tokenizer_id,
             "token_cap": token_cap,
@@ -526,8 +526,9 @@ def _build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument(
         "--sessions",
         type=Path,
-        default=Path.home() / ".omp" / "agent" / "sessions",
-        help="omp sessions root; every session below it is harvested",
+        default=None,
+        help="omp sessions root to harvest; personal session history "
+        "enters the dataset only when this path is named",
     )
     export_parser.add_argument(
         "--tokenizer",

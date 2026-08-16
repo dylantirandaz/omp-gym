@@ -1,11 +1,15 @@
 import json
+import threading
 import unittest
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from omp_gym.export import SYSTEM_PROMPT
 from omp_gym.shim import (
     _available_tools,
     _extract_tool_calls,
     _rewrite_request,
+    make_handler,
 )
 
 
@@ -190,6 +194,18 @@ class ToolCallExtractionTests(unittest.TestCase):
         self.assertEqual(content, text)
         self.assertEqual(calls, [])
 
+    def test_keeps_a_prose_shell_fence_as_text(self) -> None:
+        text = "Try running: ```bash\npytest -q\n```"
+        content, calls = _extract_tool_calls(text, self.available_tools)
+        self.assertEqual(calls, [])
+        self.assertIn("pytest -q", content)
+
+    def test_keeps_a_bare_command_fence_as_text(self) -> None:
+        text = "First check the suite.\n```\npython3 test_app.py\n```"
+        content, calls = _extract_tool_calls(text, self.available_tools)
+        self.assertEqual(calls, [])
+        self.assertIn("python3 test_app.py", content)
+
 
 class RequestRewriteTests(unittest.TestCase):
     def test_finds_an_explicit_protocol_after_context(self) -> None:
@@ -226,6 +242,95 @@ class RequestRewriteTests(unittest.TestCase):
         self.assertTrue(content.startswith("Code carefully."))
         self.assertIn("JSON object on its own line", content)
         self.assertIn("- read:", content)
+
+
+_RAW_COMPLETION = (
+    '<tool_call>{"name": "bash", "arguments":'
+    ' {"command": "true"}}</tool_call>'
+)
+
+
+class _FakeUpstream(BaseHTTPRequestHandler):
+    """A local upstream that answers with a fixed raw completion."""
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        self.rfile.read(length)
+        payload = json.dumps(
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion",
+                "model": "m",
+                "created": 0,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": _RAW_COMPLETION,
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+
+class CaptureTests(unittest.TestCase):
+    def test_capture_appends_the_raw_completion(self) -> None:
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), _FakeUpstream)
+        captured: list[dict] = []
+        shim = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            make_handler(upstream.server_address[1], capture=captured),
+        )
+        for server in (upstream, shim):
+            threading.Thread(
+                target=server.serve_forever, daemon=True
+            ).start()
+        try:
+            body = json.dumps(
+                {
+                    "model": "m",
+                    "messages": [
+                        {"role": "user", "content": "run the tests"}
+                    ],
+                    "tools": [
+                        tool_schema("bash", ("command",), ("command",))
+                    ],
+                }
+            ).encode()
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{shim.server_address[1]}"
+                "/v1/chat/completions",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                shimmed = json.loads(response.read())
+        finally:
+            for server in (shim, upstream):
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["text"], _RAW_COMPLETION)
+        user_messages = [
+            m for m in captured[0]["messages"] if m["role"] == "user"
+        ]
+        self.assertIn("run the tests", user_messages[0]["content"])
+        message = shimmed["choices"][0]["message"]
+        self.assertEqual(
+            message["tool_calls"][0]["function"]["name"], "bash"
+        )
 
 
 if __name__ == "__main__":

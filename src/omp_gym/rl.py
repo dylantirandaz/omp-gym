@@ -28,12 +28,10 @@ from mlx_lm.tuner.utils import linear_to_lora_layers
 from . import serve as serve_mod
 from . import shim as shim_mod
 from .dpo import LORA_CONFIG, LORA_NUM_LAYERS, _completion_logprob
-from .export import SYSTEM_PROMPT, _render_messages
 from .ledger import append_entry
 from .preflight import require_metal_gpu
 from .runner import EpisodeFailure, run_episode
 from .task import load_task, TaskLoadError
-from .trajectory import AssistantStep, parse_session
 
 
 class RlError(SystemExit):
@@ -62,7 +60,10 @@ def _validate_parameters(group_size: int, iterations: int) -> None:
 
 
 def _start_policy_server(
-    base_model: str, adapter_dir: Path, port: int
+    base_model: str,
+    adapter_dir: Path,
+    port: int,
+    capture: list[dict] | None = None,
 ) -> tuple[object, object, int]:
     """Start the model server plus shim.
 
@@ -79,7 +80,9 @@ def _start_policy_server(
         try:
             httpd = ThreadingHTTPServer(
                 ("127.0.0.1", candidate),
-                shim_mod.make_handler(candidate + 1, str(adapter_dir)),
+                shim_mod.make_handler(
+                    candidate + 1, str(adapter_dir), capture=capture
+                ),
             )
         except OSError:
             continue
@@ -124,40 +127,56 @@ def _start_policy_server(
     raise RlError("policy server did not become ready")
 
 
-def _first_turn_completion(session_file: Path, prompt: str, tokenizer):
-    """Render (prompt_ids, completion_ids) for an episode's first turn."""
-    trajectory = parse_session(session_file)
-    for step in trajectory.steps:
-        if isinstance(step, AssistantStep) and (step.text or step.tool_calls):
-            messages = _render_messages(trajectory, prompt)
-            turn = next(
-                (m for m in messages if m["role"] == "assistant"), None
-            )
-            if turn is None:
-                return None
-            templated = tokenizer.apply_chat_template(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                add_generation_prompt=True,
-                tokenize=True,
-            )
-            if isinstance(templated, list):
-                prompt_ids = (
-                    templated[0]
-                    if templated and isinstance(templated[0], list)
-                    else templated
-                )
-            else:
-                ids = templated["input_ids"]
-                prompt_ids = (
-                    ids[0] if ids and isinstance(ids[0], list) else ids
-                )
-            completion_ids = tokenizer(
-                turn["content"], add_special_tokens=False
-            ).input_ids
-            return prompt_ids, completion_ids
+def _encode_capture(
+    entry: dict, tokenizer
+) -> tuple[list[int], list[int]] | None:
+    """Encode one captured request and completion for the log-prob.
+
+    The completion text is the raw upstream output the policy
+    sampled, not a reconstruction from the session file. Residual
+    approximation: re-encoding raw text approximates the sampled
+    token ids; exact ids need server-side logprob capture, which
+    the mlx-lm server does not expose.
+    """
+    messages = entry.get("messages") or []
+    text = entry.get("text") or ""
+    if not messages or not text:
+        return None
+    templated = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+    )
+    if isinstance(templated, list):
+        prompt_ids = (
+            templated[0]
+            if templated and isinstance(templated[0], list)
+            else templated
+        )
+    else:
+        ids = templated["input_ids"]
+        prompt_ids = ids[0] if ids and isinstance(ids[0], list) else ids
+    completion_ids = tokenizer(text, add_special_tokens=False).input_ids
+    if not completion_ids:
+        return None
+    return prompt_ids, completion_ids
+
+
+def _match_capture(
+    capture: list[dict], prompt: str
+) -> dict | None:
+    """Find the first captured request that carries the prompt.
+
+    The first request of an episode is the one whose user content
+    contains the episode prompt; later turns repeat it, so only
+    the first match counts.
+    """
+    for entry in capture:
+        for message in entry.get("messages") or []:
+            if message.get("role") != "user":
+                continue
+            if prompt in str(message.get("content", "")):
+                return entry
     return None
 
 
@@ -180,6 +199,11 @@ def run_rl(
         raise RlError(f"bad task {task.path}: {task.reason}")
     if not (adapter_dir / "adapters.safetensors").is_file():
         raise RlError(f"no adapter at {adapter_dir}")
+    if (out_adapter / "adapters.safetensors").is_file():
+        raise RlError(
+            f"{out_adapter} already contains adapters.safetensors; "
+            "delete it or pass a fresh --out-adapter directory"
+        )
     _validate_parameters(group_size, iterations)
 
     import os
@@ -203,12 +227,9 @@ def run_rl(
         loaded, _ = load(base_model)
         loaded.freeze()
         linear_to_lora_layers(loaded, LORA_NUM_LAYERS, LORA_CONFIG)
-        source = (
-            out_adapter
-            if (out_adapter / "adapters.safetensors").is_file()
-            else adapter_dir
+        adapter_weights = mx.load(
+            str(adapter_dir / "adapters.safetensors")
         )
-        adapter_weights = mx.load(str(source / "adapters.safetensors"))
         policy_keys = {
             name for name, _ in tree_flatten(loaded.parameters())
         }
@@ -235,15 +256,20 @@ def run_rl(
             f"iteration {iteration}: serving policy and sampling "
             f"{group_size} episodes"
         )
+        # The run starts with a fresh out_adapter (guarded above), so
+        # a file there was written by this run: serve the newest
+        # weights and stay on-policy across iterations.
         source_adapter = (
             out_adapter
             if (out_adapter / "adapters.safetensors").is_file()
             else adapter_dir
         )
+        captured: list[dict] = []
         server_proc, httpd, chosen_port = _start_policy_server(
             base_model,
             source_adapter,
             port,
+            capture=captured,
         )
         serve_mod.ensure_provider(
             Path.home() / ".omp" / "agent" / "models.yml",
@@ -251,15 +277,19 @@ def run_rl(
             f"rl-{out_adapter.name}",
             base_model,
         )
+        windows: list[tuple[int, int]] = []
+        episodes = []
         try:
-            episodes = [
-                run_episode(
-                    task,
-                    runs_dir,
-                    f"omp-gym/{base_model}",
+            for _ in range(group_size):
+                first_request = len(captured)
+                episodes.append(
+                    run_episode(
+                        task,
+                        runs_dir,
+                        f"omp-gym/{base_model}",
+                    )
                 )
-                for _ in range(group_size)
-            ]
+                windows.append((first_request, len(captured)))
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -268,7 +298,9 @@ def run_rl(
 
         rewards = []
         completions = []
-        for rollout, episode in enumerate(episodes, start=1):
+        for rollout, (episode, window) in enumerate(
+            zip(episodes, windows), start=1
+        ):
             if isinstance(episode, EpisodeFailure):
                 print(
                     f"iteration {iteration} rollout {rollout} dropped: "
@@ -286,13 +318,20 @@ def run_rl(
                 if prompt_file.is_file()
                 else task.prompt
             )
-            pair = _first_turn_completion(
-                Path(episode.session_file), prompt, tokenizer
+            entry = _match_capture(
+                captured[window[0] : window[1]], prompt
             )
+            if entry is None:
+                print(
+                    f"iteration {iteration} rollout {rollout} dropped: "
+                    "no captured completion matches the episode prompt"
+                )
+                continue
+            pair = _encode_capture(entry, tokenizer)
             if pair is None:
                 print(
                     f"iteration {iteration} rollout {rollout} dropped: "
-                    "no trainable assistant turn"
+                    "captured completion is empty"
                 )
                 continue
             rewards.append(reward)
@@ -370,7 +409,7 @@ def run_rl(
             json.dumps(
                 {
                     "fine_tune_type": "lora",
-                    "method": "grpo",
+                    "method": "reinforce",
                     "model": base_model,
                     "lora_parameters": LORA_CONFIG,
                     "num_layers": LORA_NUM_LAYERS,
@@ -388,12 +427,14 @@ def run_rl(
             )
         )
 
+    updates = sum(1 for r in rounds if r.loss is not None)
     elapsed = time.monotonic() - started
     summary = {
         "task": task.name,
         "base_model": base_model,
         "group_size": group_size,
         "iterations": iterations,
+        "updates": updates,
         "rounds": [
             {
                 "iteration": r.iteration,
@@ -421,11 +462,13 @@ def run_rl(
             "adapter": str(out_adapter),
             "group_size": group_size,
             "iterations": iterations,
+            "method": "reinforce",
         },
         metrics={
             "mean_reward_first": summary["mean_reward_first"],
             "mean_reward_last": summary["mean_reward_last"],
             "elapsed_seconds": summary["elapsed_seconds"],
+            "updates": updates,
         },
         artifacts={"rl_report": str(out_adapter / "rl_report.json")},
     )

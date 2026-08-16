@@ -28,11 +28,6 @@ _TOOL_CALL_PATTERN = re.compile(
     re.DOTALL,
 )
 _FENCED_CALL_PATTERN = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-_SHELL_FENCE_PATTERN = re.compile(
-    r"```(?:python|bash|sh)?\s*\n?((?:python3?\s+test_\S+|pytest\b[^\n]*"
-    r"|npm\s+test[^\n]*|cargo\s+test[^\n]*)\s*\n?)```",
-    re.DOTALL,
-)
 _TAG_LINE_PATTERN = re.compile(r"\s*(?:\ufffd+|</?[A-Za-z_][\w-]*>)\s*")
 _MAX_REQUEST_BYTES = 32 * 1024 * 1024
 
@@ -241,17 +236,6 @@ def _extract_tool_calls(
     if scanned_calls is not None:
         return "", scanned_calls
 
-    shell = _SHELL_FENCE_PATTERN.search(text)
-    if shell:
-        command = shell.group(1).strip()
-        call = _call_from_payload(
-            {"name": "bash", "arguments": {"command": command}},
-            0,
-            available_tools,
-        )
-        if call is not None:
-            return _SHELL_FENCE_PATTERN.sub("", text).strip(), [call]
-
     trimmed = text.strip().strip("\ufffd").strip()
     if trimmed.startswith("{") and trimmed.endswith("}"):
         try:
@@ -382,8 +366,16 @@ def _sse_chunks(response: dict) -> list[dict]:
 def make_handler(
     backend_port: int,
     adapter_path: str | None = None,
+    *,
+    capture: list[dict] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
-    """Build the request handler bound to the backend port."""
+    """Build the request handler bound to the backend port.
+
+    With `capture`, the handler appends one record per completed
+    request: the exact messages sent upstream and the raw completion
+    text, before any tool-call rewriting. RL training reads these
+    records so the log-probability sees the text the policy sampled.
+    """
 
     class ShimHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
@@ -431,9 +423,8 @@ def make_handler(
                 return
             available_tools = _available_tools(body.get("tools"))
             wants_stream = bool(body.get("stream", False))
-            upstream_body = json.dumps(
-                _rewrite_request(body, adapter_path)
-            ).encode()
+            upstream_request = _rewrite_request(body, adapter_path)
+            upstream_body = json.dumps(upstream_request).encode()
             request = urllib.request.Request(
                 f"http://127.0.0.1:{backend_port}/v1/chat/completions",
                 data=upstream_body,
@@ -453,6 +444,15 @@ def make_handler(
                     502, {"error": f"upstream request failed: {error}"}
                 )
                 return
+            if capture is not None:
+                choices = upstream_response.get("choices") or [{}]
+                message = choices[0].get("message") or {}
+                capture.append(
+                    {
+                        "messages": upstream_request.get("messages", []),
+                        "text": message.get("content") or "",
+                    }
+                )
             response = _shimmed_response(upstream_response, available_tools)
             if not wants_stream:
                 self._send_json(200, response)

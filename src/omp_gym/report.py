@@ -26,7 +26,12 @@ class ModelStats:
 
 
 def _model_stats(entries: list[LedgerEntry]) -> list[ModelStats]:
-    """Aggregate all bench rows in the ledger by model."""
+    """Aggregate all bench rows in the ledger by model.
+
+    Every bench row counts as one run. An error row is a scheduled
+    episode that did not succeed, so it stays in the run count and
+    lowers the pass rate. Cost sums the rows that carry a cost.
+    """
     rows: list[dict[str, object]] = []
     for entry in entries:
         if entry.kind != "bench":
@@ -36,13 +41,16 @@ def _model_stats(entries: list[LedgerEntry]) -> list[ModelStats]:
                 rows.append(row)
     by_model: dict[str, list[dict[str, object]]] = {}
     for row in rows:
-        if row.get("error") is None:
-            by_model.setdefault(str(row["model"]), []).append(row)
+        by_model.setdefault(str(row["model"]), []).append(row)
 
     stats: list[ModelStats] = []
     for model, model_rows in sorted(by_model.items()):
         passes = sum(1 for row in model_rows if row["reward"] >= 1.0)
-        cost = sum(float(row["cost_usd"]) for row in model_rows)
+        cost = sum(
+            float(row["cost_usd"])
+            for row in model_rows
+            if row.get("cost_usd") is not None
+        )
         tokens = [int(row["total_tokens"]) for row in model_rows]
         solve_tokens = [
             int(row["total_tokens"])

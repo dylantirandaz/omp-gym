@@ -89,10 +89,11 @@ nonzero when the GPU cannot run a checked operation.
 x task grid. Writes a markdown report and a JSONL row set.
 Provider errors are reported separately from task failures.
 
-`export [--pairs] [--out DIR]` — write the dataset. Default:
-per-turn SFT samples from scored episodes and from all omp
-sessions under `~/.omp/agent/sessions`. `--pairs` writes DPO
-preference pairs.
+`export [--pairs] [--out DIR] [--sessions PATH]` — write the
+dataset from scored episodes. Session harvesting is opt-in: name a
+sessions path to include it, and review what you include. Bench
+pass rates count every scheduled episode; error rows stay in the
+denominator. `--pairs` writes DPO preference pairs split by task.
 
 `train --model M --iters N --adapter DIR [--num-layers N]
 [--learning-rate R] [--method sft|dpo] [--resume-adapter FILE]`
@@ -201,15 +202,28 @@ session with auto-approval on this machine, in a copied workspace
 that is not a security boundary. The episode can run shell
 commands, read the filesystem, and see the provider keys from
 `.env` (other host variables stay out; the child environment is a
-small whitelist). Task test commands come from `task.toml` and run
-with your user account; the loader accepts only `python3`,
-`python`, `node`, and `pytest` as the first word. Test files are
-hashed before each episode; an episode that changes them scores
-zero and its tests do not run. Reward needs positive evidence: a
-test run that exits 0 without a parseable passed-case count also
-scores zero, so a planted `os._exit(0)` cannot win. Run only tasks
-and session imports that you trust, and use a dedicated key with a
-spend limit.
+small whitelist). Prefer a dedicated macOS account or a disposable
+machine, and a provider key with a hard spend limit.
+
+The harness enforces what it can without a VM:
+
+- Episode and test processes run in their own process group; the
+  whole tree dies at the deadline and before scoring.
+- Tests never run inside the agent workspace. A fresh directory
+  gets the pristine test files plus the agent's solution files;
+  planted hook files (conftest.py, pytest.ini, .pth, and similar)
+  never cross over. The test process gets a minimal environment
+  with no provider keys.
+- Every task runs a pre-agent baseline; a task that already
+  passes is an error, not a free reward.
+- Test files are hashed; an episode that changes them scores zero.
+- Reward needs positive evidence: exit 0 without a parseable
+  passed-case count scores zero.
+
+One residual stays open by design of the process model: solution
+code that the tests import runs inside the test process and can in
+principle forge output. A virtual machine boundary is the real
+fix; treat rewards from untrusted tasks accordingly.
 
 ## Data locations
 
@@ -229,6 +243,12 @@ does.
 - `rl` is REINFORCE with a group-mean baseline, not GRPO: no KL
   term, no clipping, and the gradient lands on the first
   assistant turn only.
+- Exported trajectories are synthetic reconstructions: the last
+  edit per file becomes a full-file write, and failed calls drop.
+  They are cleaner than the real behavior that produced them.
+- RL log-probabilities come from the raw sampled text captured at
+  the server, re-encoded with the tokenizer. Exact sampled token
+  ids would need server-side logprob capture.
 - `gate` is a first-pass detector built on hand-picked leak
   markers and one tuned threshold, not a general memorization
   test.

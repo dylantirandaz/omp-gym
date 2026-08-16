@@ -167,8 +167,11 @@ def _row_from_record(record: EpisodeRecord, trial: int) -> BenchRow:
 def render_report(rows: list[BenchRow]) -> str:
     """Render the leaderboard and the task matrix as markdown.
 
-    Rows with a provider error do not count as failed tasks. They
-    appear in the errors column and as E cells in the matrix.
+    The headline pass rate divides successful episodes by all
+    scheduled rows for the model. An error row is a scheduled
+    episode that did not succeed: infrastructure failures appear
+    in the errors column and in the provider-errors section, but
+    they never leave the denominator.
     """
     models = sorted({row.model for row in rows})
     tasks = sorted({row.task for row in rows})
@@ -180,36 +183,30 @@ def render_report(rows: list[BenchRow]) -> str:
     )
     lines.append("| --- | --- | --- | --- | --- | --- | --- |")
 
-    def clean_rows(model: str) -> list[BenchRow]:
-        return [
-            row
-            for row in rows
-            if row.model == model and row.error is None
-        ]
+    def scheduled_rows(model: str) -> list[BenchRow]:
+        return [row for row in rows if row.model == model]
 
     def pass_rate(model: str) -> float:
-        clean = clean_rows(model)
-        if not clean:
+        scheduled = scheduled_rows(model)
+        if not scheduled:
             return -1.0
-        return sum(row.reward for row in clean) / len(clean)
+        wins = sum(1 for row in scheduled if row.reward >= 1.0)
+        return wins / len(scheduled)
 
     for model in sorted(models, key=lambda m: -pass_rate(m)):
-        clean = clean_rows(model)
-        errored = [
-            row
-            for row in rows
-            if row.model == model and row.error is not None
-        ]
+        scheduled = scheduled_rows(model)
+        clean = [row for row in scheduled if row.error is None]
+        errored = [row for row in scheduled if row.error is not None]
+        rate = f"{pass_rate(model):.0%} ({len(scheduled)} runs)"
         if clean:
             count = len(clean)
-            rate = f"{pass_rate(model):.0%} ({count} runs)"
             mean_seconds = f"{sum(r.duration_seconds for r in clean) / count:.1f}"
             mean_tokens = f"{sum(r.total_tokens for r in clean) / count:.0f}"
             total_cost = f"{sum(r.cost_usd for r in clean):.4f}"
             calls = str(sum(r.tool_calls for r in clean))
         else:
-            rate, mean_seconds, mean_tokens, total_cost, calls = (
-                "-", "-", "-", "-", "-",
+            mean_seconds, mean_tokens, total_cost, calls = (
+                "-", "-", "-", "-",
             )
         lines.append(
             f"| {model} | {rate} | {len(errored)} | {mean_seconds} "

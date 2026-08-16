@@ -1,6 +1,15 @@
+import os
+import tempfile
+import time
 import unittest
+from pathlib import Path
 
-from omp_gym.train import TrainError, _validate_loss_curves
+from omp_gym.train import (
+    TrainError,
+    _finish_report,
+    _require_fresh_adapter,
+    _validate_loss_curves,
+)
 
 
 class ValidateLossCurvesTests(unittest.TestCase):
@@ -27,6 +36,63 @@ class ValidateLossCurvesTests(unittest.TestCase):
         with self.assertRaises(TrainError) as caught:
             _validate_loss_curves([1.0], [])
         self.assertIn("no loss reports", str(caught.exception))
+
+
+class AdapterFreshnessTests(unittest.TestCase):
+    def test_rejects_a_missing_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(TrainError) as caught:
+                _require_fresh_adapter(Path(tmp), time.time())
+        self.assertIn("was not written", str(caught.exception))
+
+    def test_rejects_a_stale_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter_file = Path(tmp) / "adapters.safetensors"
+            adapter_file.write_bytes(b"weights")
+            old = time.time() - 3600
+            os.utime(adapter_file, (old, old))
+            with self.assertRaises(TrainError) as caught:
+                _require_fresh_adapter(Path(tmp), time.time())
+        self.assertIn("stale artifact", str(caught.exception))
+
+    def test_accepts_a_fresh_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter_file = Path(tmp) / "adapters.safetensors"
+            adapter_file.write_bytes(b"weights")
+            _require_fresh_adapter(Path(tmp), time.time() - 60)
+
+
+class FinishReportTests(unittest.TestCase):
+    def _finish(self, adapter_dir: Path, started_at: float):
+        return _finish_report(
+            "test-model",
+            Path("data"),
+            2,
+            adapter_dir,
+            [2.0, 1.0],
+            [],
+            "test-gpu",
+            started_at,
+        )
+
+    def test_rejects_a_stale_adapter_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter_file = Path(tmp) / "adapters.safetensors"
+            adapter_file.write_bytes(b"weights")
+            old = time.time() - 3600
+            os.utime(adapter_file, (old, old))
+            with self.assertRaises(TrainError) as caught:
+                self._finish(Path(tmp), time.time())
+        self.assertIn("stale artifact", str(caught.exception))
+
+    def test_accepts_a_fresh_adapter_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter_file = Path(tmp) / "adapters.safetensors"
+            adapter_file.write_bytes(b"weights")
+            report = self._finish(Path(tmp), time.time() - 60)
+            self.assertEqual(report.last_train_loss, 1.0)
+            report_file = Path(tmp) / "train_report.json"
+            self.assertTrue(report_file.is_file())
 
 
 if __name__ == "__main__":

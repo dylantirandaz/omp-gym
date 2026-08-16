@@ -1,5 +1,7 @@
 import json
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -11,13 +13,16 @@ from omp_gym.export import (
     _collect_session_messages,
     _redact,
     _render_messages,
+    _session_failed,
     export_dataset,
+    export_pairs,
 )
 from omp_gym.trajectory import (
     AssistantStep,
     ToolCall,
     ToolResultStep,
     Trajectory,
+    UserStep,
 )
 
 
@@ -531,14 +536,20 @@ class HoldoutExclusionTests(unittest.TestCase):
                 "The holdout suite passes.",
             )
 
-            rendered, seen, filtered, excluded, torn = (
-                _collect_session_messages(sessions, min_quality=False)
-            )
+            (
+                rendered,
+                seen,
+                filtered,
+                excluded,
+                excluded_content,
+                torn,
+            ) = _collect_session_messages(sessions, min_quality=False)
 
         self.assertEqual(seen, 2)
         self.assertEqual(filtered, 0)
         self.assertEqual(excluded, 1)
         self.assertEqual(torn, 0)
+        self.assertEqual(excluded_content, 0)
         self.assertEqual(len(rendered), 1)
         self.assertNotIn("holdout-tasks", json.dumps(rendered))
 
@@ -684,10 +695,251 @@ class DatasetSplitTests(unittest.TestCase):
         self.assertEqual(stats.train_samples, 11)
         self.assertEqual(stats.valid_samples, 1)
         self.assertEqual(stats.sessions_excluded_holdout, 0)
+        self.assertEqual(stats.sessions_excluded_holdout_content, 0)
         train_lines = set(train_a.splitlines())
         valid_lines = set(valid_a.splitlines())
         self.assertEqual(len(train_lines & valid_lines), 0)
         self.assertEqual(len(train_lines | valid_lines), 12)
+
+
+def _token_counter(text: str) -> int:
+    return len(text) // 4 + 1
+
+
+class OptInHarvestTests(unittest.TestCase):
+    def test_none_sessions_root_harvests_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            runs = root / "runs"
+            sessions = root / "sessions"
+            sessions.mkdir()
+            _write_episode(runs, sessions, "ep-1", "parser-fix")
+            _write_session(
+                sessions / "personal.jsonl",
+                "Fix my private repository.",
+                "The private repository is fixed.",
+            )
+
+            with mock.patch(
+                "omp_gym.export.load_token_counter",
+                return_value=_token_counter,
+            ):
+                stats = export_dataset(
+                    runs,
+                    None,
+                    root / "out",
+                    0.0,
+                    "unused-tokenizer",
+                    2048,
+                    min_quality=False,
+                )
+            train = (root / "out" / "train.jsonl").read_text()
+
+        self.assertEqual(stats.sessions_seen, 0)
+        self.assertEqual(stats.sessions_filtered, 0)
+        self.assertEqual(stats.trajectories_exported, 1)
+        self.assertNotIn("private repository", train)
+
+
+_FINGERPRINT_LINE = "assert union_intervals([(1, 3), (2, 5)]) == [(1, 5)]"
+
+
+def _write_holdout_test(holdout: Path) -> None:
+    """Write one holdout task with a distinctive test line."""
+    workspace = holdout / "interval-union" / "workspace"
+    workspace.mkdir(parents=True)
+    (workspace / "test_intervals.py").write_text(
+        "import unittest\n\n" + _FINGERPRINT_LINE + "\n"
+    )
+
+
+class HoldoutFingerprintTests(unittest.TestCase):
+    def test_renamed_episode_with_holdout_line_is_excluded(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            runs = root / "runs"
+            sessions = root / "sessions"
+            sessions.mkdir()
+            holdout = root / "holdout-tasks"
+            _write_holdout_test(holdout)
+            episode_dir = runs / "ep-renamed"
+            episode_dir.mkdir(parents=True)
+            session_file = sessions / "ep-renamed.jsonl"
+            _write_session(
+                session_file,
+                "Fix the renamed task.",
+                "Done: " + _FINGERPRINT_LINE,
+            )
+            (episode_dir / "episode.json").write_text(
+                json.dumps(
+                    {
+                        "task": "renamed-copy",
+                        "reward": 1.0,
+                        "session_file": str(session_file),
+                        "episode_dir": str(episode_dir),
+                    }
+                )
+            )
+            _write_episode(runs, sessions, "ep-clean", "parser-fix")
+
+            rendered, seen, excluded, torn = _collect_episode_messages(
+                runs, 0.0, holdout
+            )
+
+        self.assertEqual(seen, 2)
+        self.assertEqual(excluded, 1)
+        self.assertEqual(len(rendered), 1)
+        self.assertNotIn(_FINGERPRINT_LINE, json.dumps(rendered))
+
+    def test_session_with_holdout_line_counts_as_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            sessions = root / "sessions"
+            sessions.mkdir()
+            holdout = root / "holdout-tasks"
+            _write_holdout_test(holdout)
+            _write_session(
+                sessions / "leak.jsonl",
+                "Solve this exercise.",
+                "Solution: " + _FINGERPRINT_LINE,
+            )
+            _write_session(
+                sessions / "clean.jsonl",
+                "Fix the parser bug.",
+                "The parser now passes.",
+            )
+
+            (
+                rendered,
+                seen,
+                filtered,
+                excluded_holdout,
+                excluded_content,
+                torn,
+            ) = _collect_session_messages(
+                sessions, min_quality=False, holdout_dir=holdout
+            )
+
+        self.assertEqual(seen, 2)
+        self.assertEqual(filtered, 0)
+        self.assertEqual(excluded_holdout, 0)
+        self.assertEqual(excluded_content, 1)
+        self.assertEqual(len(rendered), 1)
+
+
+class SessionFailedTests(unittest.TestCase):
+    WORK = (
+        AssistantStep(
+            text="",
+            tool_calls=(
+                ToolCall(
+                    call_id="call_1",
+                    name="bash",
+                    arguments={"command": "python3 -m unittest"},
+                ),
+            ),
+        ),
+        ToolResultStep(
+            call_id="call_1",
+            tool_name="bash",
+            text="all tests passed",
+            is_error=False,
+        ),
+    )
+
+    def _failed(self, steps: tuple) -> bool:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            session_file = Path(temporary_directory) / "session.jsonl"
+            session_file.write_text("{}\n")
+            return _session_failed(
+                session_file,
+                Trajectory(steps=tuple(steps), torn_lines=0),
+            )
+
+    def test_final_correction_fails_after_successful_work(self) -> None:
+        steps = (*self.WORK, UserStep(text="That still fails."))
+        self.assertTrue(self._failed(steps))
+
+    def test_correction_followed_by_clean_work_passes(self) -> None:
+        steps = (UserStep(text="That still fails."), *self.WORK)
+        self.assertFalse(self._failed(steps))
+
+
+def _fake_transformers() -> types.SimpleNamespace:
+    """A stand-in transformers module with a length tokenizer."""
+
+    class _Tokenized:
+        def __init__(self, text: str) -> None:
+            self.input_ids = list(range(len(text) // 4 + 1))
+
+    class _Tokenizer:
+        def __call__(
+            self, text: str, add_special_tokens: bool = False
+        ) -> "_Tokenized":
+            return _Tokenized(text)
+
+    return types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(
+            from_pretrained=lambda _: _Tokenizer()
+        )
+    )
+
+
+class PairTaskSplitTests(unittest.TestCase):
+    def test_no_episode_crosses_the_task_split(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            runs = root / "runs"
+            sessions = root / "sessions"
+            sessions.mkdir()
+            for task in ("task-a", "task-b"):
+                for verdict, reward in (("win", 1.0), ("loss", 0.0)):
+                    name = f"{task}-{verdict}"
+                    episode_dir = runs / name
+                    episode_dir.mkdir(parents=True)
+                    session_file = sessions / f"{name}.jsonl"
+                    _write_session(
+                        session_file,
+                        f"Do {task}.",
+                        f"attempt {name} marker",
+                    )
+                    (episode_dir / "episode.json").write_text(
+                        json.dumps(
+                            {
+                                "task": task,
+                                "reward": reward,
+                                "session_file": str(session_file),
+                                "episode_dir": str(episode_dir),
+                            }
+                        )
+                    )
+
+            with mock.patch.dict(
+                sys.modules, {"transformers": _fake_transformers()}
+            ):
+                stats = export_pairs(
+                    runs,
+                    root / "out",
+                    max_pairs_per_task=16,
+                    tokenizer_id="unused-tokenizer",
+                    token_cap=4096,
+                )
+            train = (root / "out" / "train.jsonl").read_text()
+            valid = (root / "out" / "valid.jsonl").read_text()
+
+        self.assertEqual(stats.tasks_seen, 2)
+        self.assertEqual(stats.tasks_paired, 2)
+        self.assertEqual(stats.pairs_written, 2)
+        self.assertTrue(train.strip())
+        self.assertTrue(valid.strip())
+        markers = (
+            "attempt task-a-win marker",
+            "attempt task-a-loss marker",
+            "attempt task-b-win marker",
+            "attempt task-b-loss marker",
+        )
+        for marker in markers:
+            self.assertNotEqual(marker in train, marker in valid)
 
 
 if __name__ == "__main__":

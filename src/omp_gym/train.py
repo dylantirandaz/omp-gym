@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -100,6 +101,24 @@ def _stream_trainer(
     return losses, val_losses
 
 
+def _require_fresh_adapter(
+    adapter_dir: Path, started_at: float
+) -> None:
+    """Stop when the adapter artifact is missing or predates the run.
+
+    A stale adapters.safetensors left by an earlier run must not
+    pass as this run's output.
+    """
+    adapter_file = adapter_dir / "adapters.safetensors"
+    if not adapter_file.is_file():
+        raise TrainError(f"{adapter_file} was not written")
+    if adapter_file.stat().st_mtime < started_at:
+        raise TrainError(
+            f"{adapter_file} is a stale artifact from an earlier run; "
+            "the trainer did not write a new adapter"
+        )
+
+
 def _finish_report(
     model: str,
     data_dir: Path,
@@ -108,11 +127,10 @@ def _finish_report(
     losses: list[float],
     val_losses: list[float],
     device_name: str,
+    started_at: float,
 ) -> TrainReport:
     """Validate the adapter artifact and write the train report."""
-    adapter_file = adapter_dir / "adapters.safetensors"
-    if not adapter_file.is_file():
-        raise TrainError(f"{adapter_file} was not written")
+    _require_fresh_adapter(adapter_dir, started_at)
     report = TrainReport(
         model=model,
         data_dir=str(data_dir),
@@ -193,6 +211,7 @@ def run_training(
                 f"resume adapter {resume_adapter} is missing"
             )
         command.extend(["--resume-adapter-file", str(resume_adapter)])
+    started_at = time.time()
     losses, val_losses = _stream_trainer(command)
     return _finish_report(
         model,
@@ -202,6 +221,7 @@ def run_training(
         losses,
         val_losses,
         gpu.device_name,
+        started_at,
     )
 
 
@@ -231,6 +251,7 @@ def run_dpo_training(
         raise TrainError(
             "dpo requires --resume-adapter pointing at an SFT adapter"
         )
+    started_at = time.time()
     metrics = train_dpo(
         data_dir=data_dir,
         model_id=model,
@@ -240,6 +261,7 @@ def run_dpo_training(
         learning_rate=learning_rate,
         device_name=gpu.device_name,
     )
+    _require_fresh_adapter(adapter_dir, started_at)
     _validate_loss_curves(
         [metrics["first_train_loss"], metrics["last_train_loss"]],
         [metrics["first_val_loss"], metrics["last_val_loss"]]

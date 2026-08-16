@@ -4,9 +4,16 @@ Two sources feed the dataset:
 
 1. Scored episodes under a runs directory. The test reward filters
    these; episodes below the threshold are dropped.
-2. Every omp session below the sessions root, past and current.
-   These have no test, so no reward exists and no filter applies.
-   Failed work in a session trains the model too.
+2. Omp sessions below a sessions root that the user names. Session
+   harvest is opt-in: without a named root, no personal history
+   enters the dataset. Sessions have no test, so no reward exists
+   and no filter applies. Failed work in a session trains the
+   model too.
+
+The output is a synthetic trajectory reconstruction, not a replay
+of the real behavior: final-state writes replace only the last
+edit per path, and dropped failed calls make the trajectory
+cleaner than the real behavior was.
 
 Each assistant turn becomes one sample: the system prompt, the most
 recent context that fits the token budget, then the assistant turn
@@ -150,6 +157,7 @@ class ExportStats:
     torn_lines: int
     train_samples: int
     valid_samples: int
+    sessions_excluded_holdout_content: int
 
 
 def _elide_middle(text: str, limit: int) -> str:
@@ -207,10 +215,12 @@ def _canonical_training_call(
 ) -> tuple[str, dict[str, object]]:
     """Render the final successful edit of a file as a full write.
 
-    Only the last file-touching call for a path leaves the file in
-    its on-disk state, so only that call gets the file content as
-    its label. Earlier edits keep their real patch arguments, and
-    write calls always keep their own content.
+    The result is a synthetic trajectory reconstruction, not the
+    real call sequence. Only the last file-touching call for a
+    path leaves the file in its on-disk state, so only that call
+    gets the file content as its label. Earlier edits keep their
+    real patch arguments, and write calls always keep their own
+    content.
     """
     arguments = _normalize_tool_arguments(call.arguments)
     if (
@@ -405,6 +415,39 @@ def _holdout_task_names(holdout_dir: Path) -> frozenset[str]:
     )
 
 
+def _holdout_fingerprints(holdout_dir: Path) -> frozenset[str]:
+    """Distinctive lines from holdout test files; empty when absent.
+
+    A renamed copy of a holdout task escapes the name check. Each
+    holdout test file (named test_* or *_test.*) contributes its 3
+    longest stripped lines over 20 characters as content
+    fingerprints; rendered text that contains one never enters the
+    dataset.
+    """
+    if not holdout_dir.is_dir():
+        return frozenset()
+    fingerprints: set[str] = set()
+    for entry in holdout_dir.rglob("*"):
+        if not entry.is_file():
+            continue
+        if not (
+            entry.name.startswith("test_")
+            or entry.stem.endswith("_test")
+        ):
+            continue
+        lines = [
+            line.strip()
+            for line in entry.read_text(errors="replace").splitlines()
+        ]
+        longest = sorted(
+            (line for line in lines if len(line) > 20),
+            key=len,
+            reverse=True,
+        )
+        fingerprints.update(longest[:3])
+    return frozenset(fingerprints)
+
+
 def _collect_episode_messages(
     runs_dir: Path,
     min_reward: float,
@@ -412,10 +455,13 @@ def _collect_episode_messages(
 ) -> tuple[list[list[dict[str, str]]], int, int, int]:
     """Render scored episodes: (rendered, seen, excluded_holdout, torn).
 
-    An episode whose task carries the name of a holdout task never
-    enters the dataset: training on it would leak the benchmark.
+    An episode whose task carries the name of a holdout task, or
+    whose rendered text contains a holdout content fingerprint,
+    never enters the dataset: training on it would leak the
+    benchmark.
     """
     holdout_names = _holdout_task_names(holdout_dir)
+    fingerprints = _holdout_fingerprints(holdout_dir)
     rendered: list[list[dict[str, str]]] = []
     seen = 0
     excluded_holdout = 0
@@ -436,19 +482,29 @@ def _collect_episode_messages(
             if prompt_file.is_file()
             else TASK_PROMPT_PREFIX
         )
-        rendered.append(
-            _render_messages(trajectory, prompt, episode_file.parent / "ws")
+        messages = _render_messages(
+            trajectory, prompt, episode_file.parent / "ws"
         )
+        if any(
+            fingerprint in message["content"]
+            for message in messages
+            for fingerprint in fingerprints
+        ):
+            excluded_holdout += 1
+            continue
+        rendered.append(messages)
     return rendered, seen, excluded_holdout, torn
 
 
 def _session_failed(session_file: Path, trajectory: Trajectory) -> bool:
     """True when a session ended as a failure, not a success.
 
-    Three signals: a provider error ended the session, the last
-    tool result is an error with no successful call after it, or
-    the user corrected the agent and no work followed the last
-    correction. Sessions without any of these pass the filter.
+    Three signals: a provider error ended the session, the user
+    corrected the agent and a tool error came after the last tool
+    call, or the last correction came after the last tool call and
+    no work followed it. A correction in the final user message
+    marks the session failed even when every earlier tool call
+    succeeded. Sessions without any of these pass the filter.
     """
     from .mint import _CORRECTION
 
@@ -457,7 +513,7 @@ def _session_failed(session_file: Path, trajectory: Trajectory) -> bool:
         return True
     last_tool_error_at = -1
     last_assistant_at = -1
-    corrections_before = 0
+    last_correction_at = -1
     for index, step in enumerate(trajectory.steps):
         if isinstance(step, ToolResultStep) and step.is_error:
             last_tool_error_at = index
@@ -465,34 +521,35 @@ def _session_failed(session_file: Path, trajectory: Trajectory) -> bool:
             last_assistant_at = index
         elif isinstance(step, UserStep):
             if _CORRECTION.search(step.text):
-                corrections_before += 1
-    if corrections_before and last_assistant_at == -1:
+                last_correction_at = index
+    if last_correction_at == -1:
+        return False
+    if last_correction_at > last_assistant_at:
         return True
-    if (
-        corrections_before
-        and last_tool_error_at > last_assistant_at
-        and last_tool_error_at != -1
-    ):
-        return True
-    return False
+    return last_tool_error_at > last_assistant_at
 
 
 def _collect_session_messages(
     sessions_root: Path,
     min_quality: bool,
-) -> tuple[list[list[dict[str, str]]], int, int, int, int]:
+    holdout_dir: Path = Path("holdout-tasks"),
+) -> tuple[list[list[dict[str, str]]], int, int, int, int, int]:
     """Render all omp sessions.
 
-    Returns (rendered, seen, filtered, excluded_holdout, torn).
-    With min_quality on, sessions that ended as failures do not
-    enter the SFT dataset. They remain available for DPO pairs.
-    Sessions that mention the holdout task directory never enter
-    the dataset: training on them would leak the benchmark.
+    Returns (rendered, seen, filtered, excluded_holdout,
+    excluded_content, torn). With min_quality on, sessions that
+    ended as failures do not enter the SFT dataset. They remain
+    available for DPO pairs. Sessions that mention the holdout
+    task directory, or whose rendered text contains a holdout
+    content fingerprint, never enter the dataset: training on
+    them would leak the benchmark.
     """
+    fingerprints = _holdout_fingerprints(holdout_dir)
     rendered: list[list[dict[str, str]]] = []
     seen = 0
     filtered = 0
     excluded_holdout = 0
+    excluded_content = 0
     torn = 0
     for session_file in sorted(sessions_root.rglob("*.jsonl")):
         seen += 1
@@ -505,8 +562,22 @@ def _collect_session_messages(
         if any("holdout-tasks" in message["content"] for message in messages):
             excluded_holdout += 1
             continue
+        if any(
+            fingerprint in message["content"]
+            for message in messages
+            for fingerprint in fingerprints
+        ):
+            excluded_content += 1
+            continue
         rendered.append(messages)
-    return rendered, seen, filtered, excluded_holdout, torn
+    return (
+        rendered,
+        seen,
+        filtered,
+        excluded_holdout,
+        excluded_content,
+        torn,
+    )
 
 
 @dataclass(frozen=True)
@@ -562,6 +633,13 @@ def export_pairs(
     contexts, which diverging trajectories do not have. Pairs
     longer than the token cap are skipped: one outlier pair once
     padded a whole training run to 8320 tokens and stalled it.
+
+    The train/valid split happens by task, before pairing: about
+    one tenth of the paired tasks, at least one, go to validation,
+    and pairs are built within each side only, so no episode can
+    appear on both sides. With a single paired task, every pair
+    goes to train and validation stays empty rather than
+    duplicated; the trainer already refuses short datasets.
     """
     from transformers import AutoTokenizer
 
@@ -593,18 +671,26 @@ def export_pairs(
         elif _episode_qualifies_as_loss(session_file):
             losses.setdefault(task, []).append((prompt, first))
 
-    documents: list[str] = []
-    tasks_paired = 0
+    paired_tasks = sorted(
+        task for task in tasks_seen if wins.get(task) and losses.get(task)
+    )
+    shuffled_tasks = list(paired_tasks)
+    random.Random(7).shuffle(shuffled_tasks)
+    valid_task_count = (
+        max(1, len(shuffled_tasks) // VALID_TRAJECTORY_SHARE)
+        if len(shuffled_tasks) > 1
+        else 0
+    )
+    valid_tasks = frozenset(shuffled_tasks[:valid_task_count])
+
+    train: list[str] = []
+    valid: list[str] = []
     skipped_oversize = 0
-    for task in sorted(tasks_seen):
-        task_wins = wins.get(task, [])
-        task_losses = losses.get(task, [])
-        if not task_wins or not task_losses:
-            continue
-        tasks_paired += 1
+    for task in paired_tasks:
+        documents = valid if task in valid_tasks else train
         written = 0
-        for prompt, chosen in task_wins:
-            for _, rejected in task_losses:
+        for prompt, chosen in wins[task]:
+            for _, rejected in losses[task]:
                 if written >= max_pairs_per_task:
                     break
                 total_tokens = count(SYSTEM_PROMPT + prompt) + max(
@@ -626,26 +712,19 @@ def export_pairs(
                 written += 1
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    if len(documents) > 1:
-        valid_count = max(1, len(documents) // VALID_TRAJECTORY_SHARE)
-        shuffled = list(documents)
-        random.Random(7).shuffle(shuffled)
-        train, valid = shuffled[valid_count:], shuffled[:valid_count]
-    else:
-        train, valid = documents, documents
     (out_dir / "train.jsonl").write_text("\n".join(train) + ("\n" if train else ""))
     (out_dir / "valid.jsonl").write_text("\n".join(valid) + ("\n" if valid else ""))
     return PairStats(
         tasks_seen=len(tasks_seen),
-        tasks_paired=tasks_paired,
-        pairs_written=len(documents),
+        tasks_paired=len(paired_tasks),
+        pairs_written=len(train) + len(valid),
         pairs_skipped_oversize=skipped_oversize,
     )
 
 
 def export_dataset(
     runs_dir: Path,
-    sessions_root: Path,
+    sessions_root: Path | None,
     out_dir: Path,
     min_reward: float,
     tokenizer_id: str,
@@ -655,10 +734,12 @@ def export_dataset(
 ) -> ExportStats:
     """Collect both sources and write per-turn train/valid files.
 
-    The train/valid split separates whole trajectories so that no
-    session contributes samples to both files. The valid set takes
-    randomly chosen trajectories, with a fixed seed, until it holds
-    about one tenth of the samples.
+    Session harvest is opt-in: when sessions_root is None, or when
+    the path does not exist, no session is read and sessions_seen
+    stays 0. The train/valid split separates whole trajectories so
+    that no session contributes samples to both files. The valid
+    set takes randomly chosen trajectories, with a fixed seed,
+    until it holds about one tenth of the samples.
     """
     count_tokens = load_token_counter(tokenizer_id)
     (
@@ -667,18 +748,23 @@ def export_dataset(
         episodes_excluded,
         episode_torn,
     ) = _collect_episode_messages(runs_dir, min_reward, holdout_dir)
-    if sessions_root.is_dir():
+    if sessions_root is not None and sessions_root.is_dir():
         (
             session_msgs,
             sessions_seen,
             sessions_filtered,
             excluded_holdout,
+            excluded_content,
             session_torn,
-        ) = _collect_session_messages(sessions_root, min_quality)
+        ) = _collect_session_messages(
+            sessions_root, min_quality, holdout_dir
+        )
     else:
-        print(f"note: sessions root {sessions_root} does not exist")
+        if sessions_root is not None:
+            print(f"note: sessions root {sessions_root} does not exist")
         session_msgs, sessions_seen = [], 0
-        sessions_filtered, excluded_holdout, session_torn = 0, 0, 0
+        sessions_filtered, excluded_holdout = 0, 0
+        excluded_content, session_torn = 0, 0
 
     splits = [
         _split_turns(messages, count_tokens, token_cap)
@@ -703,6 +789,7 @@ def export_dataset(
             torn_lines=episode_torn + session_torn,
             train_samples=0,
             valid_samples=0,
+            sessions_excluded_holdout_content=excluded_content,
         )
 
     if len(splits) == 1:
@@ -739,4 +826,5 @@ def export_dataset(
         torn_lines=episode_torn + session_torn,
         train_samples=len(train),
         valid_samples=len(valid),
+        sessions_excluded_holdout_content=excluded_content,
     )
