@@ -1,6 +1,6 @@
 """The embedded dashboard page: one HTML document, no build step."""
 
-DASHBOARD_PAGE = """<!DOCTYPE html>
+DASHBOARD_PAGE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -160,6 +160,11 @@ function esc(s) {
     c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 }
 
+function jsq(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+    .replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+}
+
 function sparklineSVG(series, color, w, h) {
   if (!series || series.length < 2) return "";
   w = w || 220; h = h || 48;
@@ -184,9 +189,9 @@ async function load() {
   document.getElementById("models").innerHTML = table(
     ["model", "pass rate", "cost/pass", "tokens/solve", "mean tokens"],
     summary.models.map(m =>
-      `<tr><td>${m.model}</td>` +
+      `<tr><td>${esc(m.model)}</td>` +
       `<td class="${m.passes ? "pass" : "fail"}">` +
-      `${fmt.pct(m.passes, m.runs)}</td>` +
+      `${esc(fmt.pct(m.passes, m.runs))}</td>` +
       `<td>${fmt.money(m.cost_per_pass)}</td>` +
       `<td>${fmt.int(m.tokens_per_solve)}</td>` +
       `<td class="dim">${fmt.int(m.mean_tokens)}</td></tr>`));
@@ -194,30 +199,34 @@ async function load() {
   document.getElementById("adapters").innerHTML = table(
     ["adapter", "method", "train loss", "val loss", "when"],
     summary.adapters.map(a =>
-      `<tr><td>${a.adapter}</td><td>${a.method ?? "sft"}</td>` +
-      `<td>${a.metrics.first_train_loss} → ${a.metrics.last_train_loss}</td>` +
+      `<tr><td>${esc(a.adapter)}</td><td>${esc(a.method ?? "sft")}</td>` +
+      `<td>${esc(a.metrics.first_train_loss)} → ` +
+      `${esc(a.metrics.last_train_loss)}</td>` +
       `<td>${a.metrics.first_val_loss == null ? "-" :
-        a.metrics.first_val_loss + " → " + a.metrics.last_val_loss}</td>` +
-      `<td class="dim">${a.timestamp.slice(0, 16)}</td></tr>`));
+        esc(a.metrics.first_val_loss) + " → " +
+        esc(a.metrics.last_val_loss)}</td>` +
+      `<td class="dim">${esc(a.timestamp.slice(0, 16))}</td></tr>`));
 
   const timeline = await (await fetch("/api/timeline")).json();
   document.getElementById("timeline").innerHTML = table(
     ["when", "kind", "what"],
     timeline.reverse().map(e =>
-      `<tr><td class="dim">${e.timestamp.slice(0, 16)}</td>` +
-      `<td>${e.kind}</td><td class="dim">` +
-      `${(e.config.task ?? e.config.adapter ??
-         (e.config.models ?? []).join(",") ?? "").slice(0, 48)}</td></tr>`));
+      `<tr><td class="dim">${esc(e.timestamp.slice(0, 16))}</td>` +
+      `<td>${esc(e.kind)}</td><td class="dim">` +
+      `${esc((e.config.task ?? e.config.adapter ??
+         (e.config.models ?? []).join(",") ?? "").slice(0, 48))}</td></tr>`));
 
   EPISODES = await (await fetch("/api/episodes")).json();
   document.getElementById("episodes").innerHTML = table(
     ["episode", "task", "model", "reward", "seconds"],
     EPISODES.map(e =>
-      `<tr class="episode" onclick="showTranscript('${e.episode}')">` +
-      `<td>${e.episode}</td><td>${e.task}</td>` +
-      `<td class="dim">${e.model.split("/").pop()}</td>` +
-      `<td class="${e.reward >= 1 ? "pass" : "fail"}">${e.reward}</td>` +
-      `<td class="dim">${e.duration_seconds}</td></tr>`));
+      `<tr class="episode" ` +
+      `onclick="showTranscript('${esc(jsq(e.episode))}')">` +
+      `<td>${esc(e.episode)}</td><td>${esc(e.task)}</td>` +
+      `<td class="dim">${esc(e.model.split("/").pop())}</td>` +
+      `<td class="${e.reward >= 1 ? "pass" : "fail"}">` +
+      `${esc(e.reward)}</td>` +
+      `<td class="dim">${esc(e.duration_seconds)}</td></tr>`));
 }
 
 async function loadMonitor() {
@@ -234,12 +243,12 @@ async function loadMonitor() {
       `<span class="${fresh ? "pass" : "dim"}">` +
       `${fresh ? "running" : "stale"} · ` +
       `${Math.round(live.age_seconds)}s since last write</span><br>` +
-      `<span class="dim">iter ${lastIter} · loss ${lastLoss}` +
-      (val ? ` · val ${val.loss} @ ${val.iteration}` : "") +
+      `<span class="dim">iter ${esc(lastIter)} · loss ${esc(lastLoss)}` +
+      (val ? ` · val ${esc(val.loss)} @ ${esc(val.iteration)}` : "") +
       (live.tokens_per_second != null
-        ? ` · ${live.tokens_per_second} tok/s` : "") +
+        ? ` · ${esc(live.tokens_per_second)} tok/s` : "") +
       (live.peak_memory_gb != null
-        ? ` · ${live.peak_memory_gb} GB peak` : "") +
+        ? ` · ${esc(live.peak_memory_gb)} GB peak` : "") +
       `</span><br>` + sparklineSVG(live.losses, "#58a6ff", 440, 56) +
       `</div>`;
   } else {
@@ -253,10 +262,10 @@ async function loadMonitor() {
       data.reports.map(r =>
         `<tr><td>${esc((r.adapter_dir ?? "?").split("/").pop())}</td>` +
         `<td class="dim">${esc((r.model ?? "").split("/").pop())}</td>` +
-        `<td>${r.iterations ?? "-"}</td>` +
-        `<td>${r.first_train_loss} → ${r.last_train_loss}</td>` +
+        `<td>${esc(r.iterations ?? "-")}</td>` +
+        `<td>${esc(r.first_train_loss)} → ${esc(r.last_train_loss)}</td>` +
         `<td class="dim">${r.first_val_loss == null ? "-" :
-          r.first_val_loss + " → " + r.last_val_loss}</td>` +
+          esc(r.first_val_loss) + " → " + esc(r.last_val_loss)}</td>` +
         `<td class="dim">${esc(r.device_name ?? "-")}</td>` +
         `<td>${sparklineSVG(r.train_series, "#3fb950", 120, 28)}</td>` +
         `<td class="dim">${new Date(r.modified * 1000)
@@ -288,7 +297,7 @@ async function loadMatrix() {
         cls = c.passes === c.trials ? "c-pass"
           : c.passes ? "c-part" : "c-fail";
       }
-      return `<td class="cell ${cls}">${text}</td>`;
+      return `<td class="cell ${cls}">${esc(text)}</td>`;
     }).join("");
     return `<tr><td>${esc(r.label)}</td>` +
       `<td class="dim">${esc(String(r.when)).slice(0, 16)}</td>${cells}</tr>`;
@@ -315,12 +324,12 @@ function renderStep(s) {
     return `<div class="step user">${esc(s.text)}</div>`;
   if (s.role === "assistant") {
     const calls = (s.tool_calls ?? []).map(c =>
-      `<div class="tc">→ <code>${c.name}</code> ` +
+      `<div class="tc">→ <code>${esc(c.name)}</code> ` +
       `${esc(JSON.stringify(c.arguments)).slice(0, 400)}</div>`).join("");
     return `<div class="step assistant">${esc(s.text ?? "")}${calls}</div>`;
   }
   return `<div class="step tool${s.is_error ? " error" : ""}">` +
-    `[${s.tool_name}] ${esc(s.text ?? "")}</div>`;
+    `[${esc(s.tool_name)}] ${esc(s.text ?? "")}</div>`;
 }
 
 function initReplay(pane, name, data) {
@@ -339,7 +348,7 @@ function fillCompare(name) {
     EPISODES.filter(e => me && e.task === me.task && e.episode !== name)
       .map(e => `<option value="${esc(e.episode)}">` +
         `${esc(e.episode)} · ${esc(e.model.split("/").pop())} · ` +
-        `reward ${e.reward}</option>`));
+        `reward ${esc(e.reward)}</option>`));
   document.getElementById("compare").innerHTML = options.join("");
 }
 
@@ -399,9 +408,9 @@ function renderReplay(pane) {
   document.getElementById("replay-" + pane).innerHTML =
     `<div style="margin-bottom:6px"><strong>${esc(state.name)}</strong> ` +
     `<span class="${record.reward >= 1 ? "pass" : "fail"}">` +
-    `reward ${record.reward ?? "?"}</span> ` +
+    `reward ${esc(record.reward ?? "?")}</span> ` +
     `<span class="dim">${esc((record.model ?? "").split("/").pop())} · ` +
-    `${record.duration_seconds ?? "?"}s</span></div>` +
+    `${esc(record.duration_seconds ?? "?")}s</span></div>` +
     `<input type="range" min="0" max="${state.steps.length - 1}" ` +
     `value="${state.idx}" oninput="scrub('${pane}', this.value)">` +
     `<div class="dim">step ${state.idx + 1} / ${state.steps.length}</div>` +
@@ -415,7 +424,7 @@ async function loadFailures() {
   document.getElementById("failures").innerHTML = table(
     ["mode", "count"],
     Object.entries(clusters).map(([mode, c]) =>
-      `<tr><td>${esc(mode)}</td><td>${c.count}</td></tr>`));
+      `<tr><td>${esc(mode)}</td><td>${esc(c.count)}</td></tr>`));
 }
 
 async function loadInterp() {
@@ -423,19 +432,19 @@ async function loadInterp() {
   let html = "";
   if (data.lens) {
     html += "<p class='dim'>logit lens · " + esc(data.lens.model) +
-      " · " + data.lens.layers + " layers</p>";
+      " · " + esc(data.lens.layers) + " layers</p>";
     html += table(["layer", "top predictions"],
       data.lens.top_by_layer.map((tokens, i) =>
         `<tr><td>${i}</td><td class="dim">` +
         tokens.map(esc).join(" · ") + "</td></tr>"));
   }
   if (data.sae) {
-    html += "<p class='dim'>SAE · layer " + data.sae.layer +
+    html += "<p class='dim'>SAE · layer " + esc(data.sae.layer) +
       " · loss " + data.sae.loss_first.toFixed(3) + " → " +
       data.sae.loss_last.toFixed(3) + "</p>";
     html += table(["feature", "rate", "fires on"],
       data.sae.report.slice(0, 12).map(f =>
-        `<tr><td>${f.feature}</td><td>${f.activity_rate}</td>` +
+        `<tr><td>${esc(f.feature)}</td><td>${esc(f.activity_rate)}</td>` +
         `<td class="dim">` +
         `${esc((f.top_samples[0] ?? {}).excerpt ?? "")}</td></tr>`));
   }
@@ -507,11 +516,11 @@ async function runSae() {
       `${esc(t.text)}</span>`;
   }).join("");
   const chips = res.top_features.map(f =>
-    `<span class="chip" onclick="pickFeature(${f.id})">#${f.id} · ` +
-    `${f.activation}</span>`).join("");
+    `<span class="chip" onclick="pickFeature(${Number(f.id)})">` +
+    `#${esc(f.id)} · ${esc(f.activation)}</span>`).join("");
   out.innerHTML = `<div class="dim">model ${esc(res.model)}` +
     (res.adapter ? ` + ${esc(res.adapter)}` : "") +
-    ` · layer ${res.layer}</div>` +
+    ` · layer ${esc(res.layer)}</div>` +
     `<div style="margin:8px 0;line-height:2">${spans}</div>` +
     `<div>top features: ${chips}</div>`;
 }
@@ -539,7 +548,7 @@ async function runSteer() {
     `<div style="flex:1;min-width:0"><div class="dim">alpha 0</div>` +
     `<pre class="gen">${esc(res.unsteered)}</pre></div>` +
     `<div style="flex:1;min-width:0"><div class="dim">feature #` +
-    `${res.feature} · alpha ${res.alpha}</div>` +
+    `${esc(res.feature)} · alpha ${esc(res.alpha)}</div>` +
     `<pre class="gen">${esc(res.steered)}</pre></div></div>`;
 }
 
@@ -552,7 +561,7 @@ async function loadTraining() {
         ? sparklineSVG(t.series, "#3fb950") : "";
       return `<div style="margin-bottom:14px">` +
         `<strong>${esc(t.adapter)}</strong>` +
-        ` <span class="dim">${t.method} · ${t.iters} iters · ` +
+        ` <span class="dim">${esc(t.method)} · ${esc(t.iters)} iters · ` +
         `${t.first.toFixed(3)} → ${t.last.toFixed(4)}` +
         (t.first_val != null ? ` · val ${t.first_val.toFixed(3)} → ` +
           `${t.last_val.toFixed(4)}` : "") +
@@ -562,7 +571,8 @@ async function loadTraining() {
   if (data.rl && data.rl.length) {
     html += data.rl.map(r =>
       `<div><strong>${esc(r.adapter)}</strong> <span class="dim">rl · ` +
-      `mean reward ${r.mean_reward_first} → ${r.mean_reward_last}</span></div>`
+      `mean reward ${esc(r.mean_reward_first)} → ` +
+      `${esc(r.mean_reward_last)}</span></div>`
     ).join("");
   }
   document.getElementById("training").innerHTML =

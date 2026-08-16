@@ -1,10 +1,11 @@
-"""Group-relative policy gradient over live episodes.
+"""REINFORCE with a group-mean baseline over live episodes.
 
 For each iteration: sample a group of episodes for one task with
 the served policy, score each with the task tests, and update the
-policy toward episodes that beat the group mean. This is GRPO
-without the KL term: reward minus group baseline, applied to the
-logprob of each episode's first assistant turn.
+policy toward episodes that beat the group mean. The advantage is
+reward minus the group mean, divided by the group standard
+deviation, applied to the logprob of each episode's first
+assistant turn.
 
 The server that produces episodes restarts at every iteration, so
 each group is sampled from the current policy weights.
@@ -303,7 +304,6 @@ def run_rl(
         has_reward_variance = any(
             reward != rewards[0] for reward in rewards[1:]
         )
-        advantages = [reward - mean_reward for reward in rewards]
         print(
             f"iteration {iteration}: rewards "
             f"{[round(r, 2) for r in rewards]} mean {mean_reward:.2f}"
@@ -321,6 +321,16 @@ def run_rl(
             print("no group variance; no update this iteration")
             continue
 
+        variance = sum(
+            (reward - mean_reward) ** 2 for reward in rewards
+        ) / len(rewards)
+        group_std = variance**0.5
+        if group_std == 0.0:
+            group_std = 1.0
+        advantages = [
+            (reward - mean_reward) / group_std for reward in rewards
+        ]
+
         longest = max(
             len(p) + len(c) for p, c in completions
         )
@@ -329,7 +339,7 @@ def run_rl(
         del episodes
         mx.clear_cache()
 
-        def pg_loss(model, batch, advs):
+        def pg_loss(model, batch, advs, pad_to=pad_to):
             terms = []
             for (prompt_ids, completion_ids), adv in zip(batch, advs):
                 lp = _completion_logprob(

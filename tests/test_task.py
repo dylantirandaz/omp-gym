@@ -47,6 +47,19 @@ class LoadTaskTests(unittest.TestCase):
         self.assertIsInstance(loaded, TaskLoadError)
         self.assertIn("test_command", loaded.reason)
 
+    def test_rejects_a_shell_test_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            task_dir = Path(temporary_directory) / "fix-app"
+            write_task(
+                task_dir,
+                test_command='["sh", "-c", "python3 test_app.py"]',
+            )
+            loaded = load_task(task_dir)
+        self.assertIsInstance(loaded, TaskLoadError)
+        self.assertIn(
+            "node, pytest, python, python3", loaded.reason
+        )
+
 
 class LoadTaskSuiteTests(unittest.TestCase):
     def test_finds_tasks_in_nested_pools(self) -> None:

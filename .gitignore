@@ -13,3 +13,4 @@ experiments/
 gym.toml
 imported/
 src/inkling_quant_lab/
+tasks/minted/

@@ -4,6 +4,7 @@ One episode: copy the task workspace, run omp on the prompt without
 supervision, then run the task tests. The test result is the reward.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -13,6 +14,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 
 from .envfile import load_env_file
@@ -102,6 +104,58 @@ def _partial_credit(test_output: str) -> float | None:
     return None
 
 
+def _protected_files(task: TaskSpec) -> tuple[str, ...]:
+    """Workspace-relative paths of files the episode must not change.
+
+    A file is protected when the test command names it, when its
+    name matches test_* or *_test.*, or when it sits under a
+    tests/ directory. The set comes from the pristine workspace.
+    """
+    workspace = task.workspace.resolve()
+    protected: set[str] = set()
+    for argument in task.test_command:
+        candidate = (workspace / argument).resolve()
+        if candidate.is_file() and candidate.is_relative_to(workspace):
+            protected.add(candidate.relative_to(workspace).as_posix())
+    for path in workspace.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(workspace)
+        named_like_test = fnmatch(path.name, "test_*") or fnmatch(
+            path.name, "*_test.*"
+        )
+        if named_like_test or "tests" in relative.parts[:-1]:
+            protected.add(relative.as_posix())
+    return tuple(sorted(protected))
+
+
+def _file_digests(
+    workspace: Path, relative_paths: tuple[str, ...]
+) -> dict[str, str]:
+    """SHA-256 digest of each named file inside the workspace."""
+    return {
+        relative: hashlib.sha256(
+            (workspace / relative).read_bytes()
+        ).hexdigest()
+        for relative in relative_paths
+    }
+
+
+def _changed_protected_files(
+    workspace: Path, pristine_digests: Mapping[str, str]
+) -> tuple[str, ...]:
+    """Protected files that changed or vanished in the workspace."""
+    changed: list[str] = []
+    for relative, digest in sorted(pristine_digests.items()):
+        path = workspace / relative
+        if not path.is_file():
+            changed.append(relative)
+            continue
+        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            changed.append(relative)
+    return tuple(changed)
+
+
 @dataclass(frozen=True)
 class EpisodeRecord:
     """Result of one completed episode."""
@@ -115,6 +169,7 @@ class EpisodeRecord:
     reward: float
     reward_partial: float | None
     duration_seconds: float
+    test_files_changed: bool = False
 
 
 @dataclass(frozen=True)
@@ -156,6 +211,8 @@ def run_episode(
     episode_dir.mkdir(parents=True, exist_ok=False)
     shutil.copytree(task.workspace, workspace)
     session_dir.mkdir()
+    protected = _protected_files(task)
+    pristine_digests = _file_digests(task.workspace, protected)
     prompt = _episode_prompt(task, workspace)
     (episode_dir / "prompt.txt").write_text(prompt + "\n")
 
@@ -214,6 +271,28 @@ def run_episode(
             task=task.name,
             reason=(f"omp exited with {omp_run.returncode} and wrote no session"),
         )
+
+    changed = _changed_protected_files(workspace, pristine_digests)
+    if changed:
+        (episode_dir / "test_output.log").write_text(
+            "protected test files changed: " + ", ".join(changed) + "\n"
+        )
+        record = EpisodeRecord(
+            task=task.name,
+            model=model if model is not None else "default",
+            episode_dir=str(episode_dir),
+            session_file=str(session_file),
+            omp_exit_code=omp_run.returncode,
+            test_exit_code=1,
+            reward=0.0,
+            reward_partial=None,
+            duration_seconds=round(duration, 1),
+            test_files_changed=True,
+        )
+        (episode_dir / "episode.json").write_text(
+            json.dumps(asdict(record), indent=2)
+        )
+        return record
 
     try:
         test_run = subprocess.run(

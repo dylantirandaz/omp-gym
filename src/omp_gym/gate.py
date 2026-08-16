@@ -8,6 +8,12 @@ generates short completions with the adapter and counts training
 task tokens that the prompt did not ask for. The two scores make one
 memorization score. A score at or above the threshold flags the
 adapter and the CLI exits with code 1.
+
+The gate is a first-pass detector. It rests on hand-picked leak
+markers and one threshold tuned on a small set of measured runs.
+It is not a general memorization test: an adapter that leaks
+training data without these exact markers passes the leak check,
+and drift only sees the one probed layer.
 """
 
 import gc
@@ -46,15 +52,15 @@ MEMORIZATION_THRESHOLD = 0.10
 # Markers are training-task tokens. The first group holds task
 # names. The second group holds verbatim code from the slug task
 # solutions in the training data. Adapter v15 pasted that code
-# into unrelated tasks without the word "slug", so name markers
-# alone do not catch it.
+# into unrelated tasks without the task name, so name markers
+# alone do not catch it. Bare common words such as "csv" or
+# "slug" are excluded: they appear in ordinary completions and
+# would count false leaks.
 LEAK_MARKERS = (
     "slugify",
-    "slug",
     "fizzbuzz",
     "FizzBuzz",
     "total_column",
-    "csv",
     "[^a-z0-9]",
     ".strip('-')",
 )

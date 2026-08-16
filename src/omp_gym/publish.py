@@ -1,12 +1,12 @@
-"""Publish the ledger as a static page on GitHub Pages.
+"""Publish the ledger report as a static page.
 
-Writes docs/index.html (a rendered report page), commits nothing
-itself: the caller pushes. Then enables Pages through the GitHub
-API when gh is authenticated.
+Writes docs/index.html (a rendered report page). With --push it
+commits and pushes only that file. It never changes repository
+settings: enabling GitHub Pages stays a manual decision, because a
+one-command publish pipeline can amplify a data leak.
 """
 
 import html
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -29,20 +29,6 @@ def _git_binary() -> str:
         return clt
     raise RuntimeError("no working git binary found")
 
-
-def _repo_slug(repo_root: Path) -> str:
-    """Return owner/name from the origin remote."""
-    remote = subprocess.run(
-        [_git_binary(), "remote", "get-url", "origin"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    found = re.search(r"github\.com[:/]([^/]+/[^/.]+)", remote)
-    if not found:
-        raise RuntimeError(f"cannot parse origin remote: {remote}")
-    return found.group(1)
 
 _PAGE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -101,19 +87,18 @@ def _markdown_to_html(markdown: str) -> str:
 def publish_report(
     repo_root: Path, ledger_path: Path, push: bool
 ) -> dict:
-    """Render docs/index.html, push, and enable GitHub Pages."""
+    """Render docs/index.html and push only that file on request."""
     report = report_from_ledger(ledger_path)
     docs = repo_root / "docs"
     docs.mkdir(exist_ok=True)
     page = docs / "index.html"
     page.write_text(_PAGE.format(body=_markdown_to_html(report)))
 
-    result = {"page": str(page), "pushed": False, "pages_url": None}
+    result = {"page": str(page), "pushed": False}
     if not push:
         return result
 
     git_bin = _git_binary()
-    slug = _repo_slug(repo_root)
 
     def git(*args: str) -> None:
         subprocess.run(
@@ -133,24 +118,4 @@ def publish_report(
     if commit.returncode == 0:
         git("push", "-q", "origin", "main")
         result["pushed"] = True
-        enable = subprocess.run(
-            [
-                "gh",
-                "api",
-                f"repos/{slug}/pages",
-                "-X",
-                "POST",
-                "-f",
-                "source[branch]=main",
-                "-f",
-                "source[path]=/docs",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if enable.returncode == 0:
-            owner = slug.split("/")[0]
-            result["pages_url"] = (
-                f"https://{owner}.github.io/{slug.split('/')[1]}/"
-            )
     return result

@@ -8,11 +8,13 @@ tool calls as the workspace, and the failing test command found in
 the session's bash history.
 """
 
+import json
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .export import _redact
 from .trajectory import (
     AssistantStep,
     ToolResultStep,
@@ -32,6 +34,22 @@ _TEST_COMMAND = re.compile(
 _TEST_FAILED = re.compile(
     r"\b(failed|FAILED|FAILURES|panic:|AssertionError)\b"
 )
+
+
+_SHELL_METACHARACTERS = re.compile("[&|;`$<>()'\"]")
+
+
+def _split_test_command(command: str) -> list[str] | None:
+    """Split one captured test command into an argv list.
+
+    A shell metacharacter or a quote can smuggle one more command
+    into the line. The function rejects such a line. The result
+    runs without a shell.
+    """
+    if _SHELL_METACHARACTERS.search(command) is not None:
+        return None
+    argv = command.split()
+    return argv or None
 
 
 def _has_selector(path: str) -> bool:
@@ -66,11 +84,9 @@ def _session_cwd(session_file: Path) -> Path | None:
     """Read the working directory recorded in the session header."""
     for line in session_file.read_text().splitlines()[:20]:
         if '"type": "session"' in line or '"type":"session"' in line:
-            import json as _json
-
             try:
-                entry = _json.loads(line)
-            except _json.JSONDecodeError:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
                 continue
             cwd = entry.get("cwd")
             if isinstance(cwd, str):
@@ -163,7 +179,7 @@ def _scan_session(session_file: Path) -> dict | None:
     cwd = _session_cwd(session_file)
     corrections = 0
     first_user = None
-    test_command = None
+    test_command: list[str] | None = None
     test_failed_late = False
     writes: dict[str, str] = {}
     reads: dict[str, str] = {}
@@ -181,10 +197,13 @@ def _scan_session(session_file: Path) -> dict | None:
                 if call.name == "bash":
                     command = str(call.arguments.get("command", ""))
                     found = _TEST_COMMAND.search(command)
-                    if found:
-                        # The last match is the command the session
-                        # ended on, which matches the final file state.
-                        test_command = found.group(1).strip()
+                    if found is not None:
+                        argv = _split_test_command(found.group(1).strip())
+                        if argv is not None:
+                            # The last clean match is the command the
+                            # session ended on, which matches the final
+                            # file state.
+                            test_command = argv
                 elif call.name == "write":
                     path = str(call.arguments.get("path", ""))
                     content = str(call.arguments.get("content", ""))
@@ -264,17 +283,27 @@ def mint_tasks(
         task_dir = out_dir / name
         workspace = task_dir / "workspace"
         workspace.mkdir(parents=True, exist_ok=True)
+        workspace_root = workspace.resolve()
         for path, content in evidence["latest"].items():
             if not path or path in (".", "/", "\\"):
                 continue
-            target = workspace / path
+            target = (workspace_root / path).resolve()
+            # A path with ".." or an absolute prefix can leave the
+            # workspace. Such a path is skipped.
+            if target == workspace_root or not target.is_relative_to(
+                workspace_root
+            ):
+                continue
             if target.is_dir():
                 continue
             # A stored path can disagree with a deeper path about
-            # which one is the file; the deeper path wins.
+            # which one is the file; the deeper path wins. The walk
+            # stays inside the workspace root.
             ancestor_file = None
             cursor = target.parent
-            while cursor != workspace and cursor != cursor.parent:
+            while cursor != workspace_root and cursor.is_relative_to(
+                workspace_root
+            ):
                 if cursor.is_file():
                     ancestor_file = cursor
                     break
@@ -282,17 +311,18 @@ def mint_tasks(
             if ancestor_file is not None:
                 ancestor_file.unlink()
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
-        test_command = evidence["test_command"]
-        test_target = re.search(
-            r"(\S*test_\S+\.py)", test_command
-        )
-        selector = re.search(r"-k\s+'([^']+)'", test_command)
-        if selector is not None and test_target is not None:
-            target_name = Path(test_target.group(1)).name
-            target_content = evidence["latest"].get(
-                test_target.group(1)
-            ) or next(
+            target.write_text(_redact(content))
+        argv = list(evidence["test_command"])
+        test_target = None
+        for part in argv:
+            found = re.search(r"(\S*test_\S+\.py)", part)
+            if found is not None:
+                test_target = found.group(1)
+                break
+        if "-k" in argv and test_target is not None:
+            flag = argv.index("-k")
+            target_name = Path(test_target).name
+            target_content = evidence["latest"].get(test_target) or next(
                 (
                     content
                     for path, content in evidence["latest"].items()
@@ -300,48 +330,45 @@ def mint_tasks(
                 ),
                 None,
             )
-            if target_content is not None:
-                names = selector.group(1).split(" or ")
-                missing = [
-                    name
-                    for name in names
-                    if f"def test_{name}" not in target_content
-                    and name not in target_content
-                ]
-                if missing:
-                    test_command = re.sub(
-                        r"\s+-k\s+'[^']+'", "", test_command
-                    )
-        prompt = (
+            if flag + 1 < len(argv) and target_content is not None:
+                selector = argv[flag + 1]
+                if (
+                    f"def test_{selector}" not in target_content
+                    and selector not in target_content
+                ):
+                    del argv[flag : flag + 2]
+        command_text = " ".join(argv)
+        prompt = _redact(
             evidence["prompt"]
             + "\n\nRun `"
-            + test_command
+            + command_text
             + "` to confirm the fix.\n"
         )
         fidelity = "partial"
-        if test_target is not None:
-            expected = test_target.group(1)
-            if (
-                expected in evidence["writes"]
-                or expected in evidence["reads"]
-                or expected in evidence["latest"]
-            ):
-                fidelity = "complete"
+        if test_target is not None and (
+            test_target in evidence["writes"]
+            or test_target in evidence["reads"]
+            or test_target in evidence["latest"]
+        ):
+            fidelity = "complete"
+        argv_toml = ", ".join(json.dumps(part) for part in argv)
         (task_dir / "task.toml").write_text(
-            f'prompt = """\n{prompt}"""\n'
-            f'test_command = ["sh", "-c", "{test_command}"]\n'
+            f"prompt = {json.dumps(prompt)}\n"
+            f"test_command = [{argv_toml}]\n"
             f'fidelity = "{fidelity}"\n'
         )
         (task_dir / "SOURCE.md").write_text(
-            f"source session: {session_file}\n"
-            f"failure signals: {evidence['signals']}\n"
+            _redact(
+                f"source session: {session_file}\n"
+                f"failure signals: {evidence['signals']}\n"
+            )
         )
         minted.append(
             MintedTask(
                 name=name,
                 source_session=str(session_file),
                 signals=evidence["signals"],
-                test_command=test_command,
+                test_command=command_text,
                 fidelity=fidelity,
                 task_dir=str(task_dir),
             )

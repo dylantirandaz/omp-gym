@@ -2,11 +2,15 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from omp_gym.export import (
     TASK_PROMPT_PREFIX,
     _canonical_training_call,
+    _collect_session_messages,
+    _redact,
     _render_messages,
+    export_dataset,
 )
 from omp_gym.trajectory import (
     AssistantStep,
@@ -14,6 +18,113 @@ from omp_gym.trajectory import (
     ToolResultStep,
     Trajectory,
 )
+
+
+def _session_line(role: str, text: str) -> str:
+    """Build one session JSONL line with a single text block."""
+    return json.dumps(
+        {
+            "type": "message",
+            "message": {
+                "role": role,
+                "content": [{"type": "text", "text": text}],
+            },
+        }
+    )
+
+
+def _write_session(path: Path, user_text: str, assistant_text: str) -> None:
+    """Write a minimal two-step session file."""
+    path.write_text(
+        _session_line("user", user_text)
+        + "\n"
+        + _session_line("assistant", assistant_text)
+        + "\n"
+    )
+
+
+class RedactionTests(unittest.TestCase):
+    UNCHANGED = (
+        "tokens = tokenizer.encode(prompt)",
+        "self.tokenizer = AutoTokenizer.from_pretrained(m)",
+        "token_cap: int = 2048",
+        "password_hash: str",
+        "total_tokens += usage",
+        "secret=short",
+        "password = get_password(user)",
+        "access_token_count = 12345678",
+    )
+
+    def test_code_shaped_text_is_unchanged(self) -> None:
+        for text in self.UNCHANGED:
+            with self.subTest(text=text):
+                self.assertEqual(_redact(text), text)
+
+    def test_known_token_literals_are_redacted(self) -> None:
+        literals = (
+            "sk-or-v1-abcdef1234567890",
+            "ghp_abcdefghij1234567890",
+            "github_pat_abcdefghij1234567890",
+            "gho_abcdefghij1234567890",
+            "xoxb-1234567890-abcdef",
+            "AKIAIOSFODNN7EXAMPLE",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abcdefghij",
+        )
+        for literal in literals:
+            with self.subTest(literal=literal):
+                redacted = _redact(f"log: {literal} end")
+                self.assertNotIn(literal, redacted)
+                self.assertIn("[REDACTED]", redacted)
+                self.assertIn("end", redacted)
+
+    def test_json_api_key_value_is_redacted(self) -> None:
+        self.assertEqual(
+            _redact('{"api_key": "abcdef123456"}'),
+            '{"api_key": "[REDACTED]"}',
+        )
+
+    def test_json_ghp_token_value_is_redacted(self) -> None:
+        self.assertEqual(
+            _redact('{"token": "ghp_abcdefghij1234567890"}'),
+            '{"token": "[REDACTED]"}',
+        )
+
+    def test_bearer_header_keeps_the_word_bearer(self) -> None:
+        header = (
+            "Authorization: Bearer "
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abcdefghij"
+        )
+        self.assertEqual(
+            _redact(header), "Authorization: Bearer [REDACTED]"
+        )
+
+    def test_bearer_header_with_opaque_token(self) -> None:
+        self.assertEqual(
+            _redact("Authorization: Bearer abc123def456ghij"),
+            "Authorization: Bearer [REDACTED]",
+        )
+
+    def test_env_assignment_with_key_literal(self) -> None:
+        self.assertEqual(
+            _redact("OPENROUTER_API_KEY=sk-or-v1-abcdef1234567890"),
+            "OPENROUTER_API_KEY=[REDACTED]",
+        )
+
+    def test_secret_word_assignments_are_redacted(self) -> None:
+        cases = (
+            ("password=hunter2hunter2", "password=[REDACTED]"),
+            (
+                "client_secret: verysecretvalue",
+                "client_secret: [REDACTED]",
+            ),
+            (
+                "'access_token': 'abcdefgh1234'",
+                "'access_token': '[REDACTED]'",
+            ),
+        )
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(_redact(text), expected)
 
 
 class CurriculumRenderingTests(unittest.TestCase):
@@ -54,7 +165,7 @@ class CurriculumRenderingTests(unittest.TestCase):
                     tool_name="bash",
                     text=(
                         "OPENROUTER_API_KEY=sk-or-v1-abcdef1234567890\n"
-                        "token: super-secret-value\n"
+                        "access_token: super-secret-value\n"
                         "exit 0"
                     ),
                     is_error=False,
@@ -197,6 +308,140 @@ class CurriculumRenderingTests(unittest.TestCase):
             },
         )
 
+    def test_only_the_final_edit_becomes_a_full_file_write(self) -> None:
+        first_patch = "[app.py#ABCD]\nPUT 1.=1:\n+draft = 1\n"
+        second_patch = "[app.py#EF01]\nPUT 1.=1:\n+final = True\n"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            (workspace / "app.py").write_text("final = True\n")
+            trajectory = Trajectory(
+                steps=(
+                    AssistantStep(
+                        text="",
+                        tool_calls=(
+                            ToolCall(
+                                call_id="call_1",
+                                name="edit",
+                                arguments={
+                                    "input": first_patch,
+                                    "i": "First pass",
+                                },
+                            ),
+                        ),
+                    ),
+                    ToolResultStep(
+                        call_id="call_1",
+                        tool_name="edit",
+                        text="updated",
+                        is_error=False,
+                    ),
+                    AssistantStep(
+                        text="",
+                        tool_calls=(
+                            ToolCall(
+                                call_id="call_2",
+                                name="edit",
+                                arguments={
+                                    "input": second_patch,
+                                    "i": "Second pass",
+                                },
+                            ),
+                        ),
+                    ),
+                    ToolResultStep(
+                        call_id="call_2",
+                        tool_name="edit",
+                        text="updated",
+                        is_error=False,
+                    ),
+                ),
+                torn_lines=0,
+            )
+
+            messages = _render_messages(
+                trajectory,
+                TASK_PROMPT_PREFIX,
+                workspace,
+            )
+
+        payloads = [
+            json.loads(message["content"])
+            for message in messages
+            if message["role"] == "assistant"
+        ]
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(payloads[0]["name"], "edit")
+        self.assertEqual(payloads[0]["arguments"]["input"], first_patch)
+        self.assertEqual(payloads[1]["name"], "write")
+        self.assertEqual(
+            payloads[1]["arguments"]["content"], "final = True\n"
+        )
+
+    def test_write_after_edit_keeps_both_calls_as_written(self) -> None:
+        patch = "[app.py#ABCD]\nPUT 1.=1:\n+draft = 1\n"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            (workspace / "app.py").write_text("on_disk = True\n")
+            trajectory = Trajectory(
+                steps=(
+                    AssistantStep(
+                        text="",
+                        tool_calls=(
+                            ToolCall(
+                                call_id="call_1",
+                                name="edit",
+                                arguments={"input": patch},
+                            ),
+                        ),
+                    ),
+                    ToolResultStep(
+                        call_id="call_1",
+                        tool_name="edit",
+                        text="updated",
+                        is_error=False,
+                    ),
+                    AssistantStep(
+                        text="",
+                        tool_calls=(
+                            ToolCall(
+                                call_id="call_2",
+                                name="write",
+                                arguments={
+                                    "path": "app.py",
+                                    "content": "explicit = True\n",
+                                },
+                            ),
+                        ),
+                    ),
+                    ToolResultStep(
+                        call_id="call_2",
+                        tool_name="write",
+                        text="written",
+                        is_error=False,
+                    ),
+                ),
+                torn_lines=0,
+            )
+
+            messages = _render_messages(
+                trajectory,
+                TASK_PROMPT_PREFIX,
+                workspace,
+            )
+
+        payloads = [
+            json.loads(message["content"])
+            for message in messages
+            if message["role"] == "assistant"
+        ]
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(payloads[0]["name"], "edit")
+        self.assertEqual(payloads[0]["arguments"]["input"], patch)
+        self.assertEqual(payloads[1]["name"], "write")
+        self.assertEqual(
+            payloads[1]["arguments"]["content"], "explicit = True\n"
+        )
+
     def test_legacy_edit_becomes_a_full_file_write(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             workspace = Path(temporary_directory)
@@ -247,6 +492,90 @@ class CurriculumRenderingTests(unittest.TestCase):
         contents = [message["content"] for message in messages]
         self.assertTrue(any('"name": "bash"' in content for content in contents))
         self.assertTrue(any("1 test failed" in content for content in contents))
+
+
+class HoldoutExclusionTests(unittest.TestCase):
+    def test_holdout_mention_excludes_the_session(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            sessions = Path(temporary_directory)
+            _write_session(
+                sessions / "clean.jsonl",
+                "Fix the parser bug.",
+                "The parser now passes its tests.",
+            )
+            _write_session(
+                sessions / "leak.jsonl",
+                "Run the suite in holdout-tasks/json-fix.",
+                "The holdout suite passes.",
+            )
+
+            rendered, seen, filtered, excluded, torn = (
+                _collect_session_messages(sessions, min_quality=False)
+            )
+
+        self.assertEqual(seen, 2)
+        self.assertEqual(filtered, 0)
+        self.assertEqual(excluded, 1)
+        self.assertEqual(torn, 0)
+        self.assertEqual(len(rendered), 1)
+        self.assertNotIn("holdout-tasks", json.dumps(rendered))
+
+
+class DatasetSplitTests(unittest.TestCase):
+    def test_split_is_random_deterministic_and_disjoint(self) -> None:
+        def counter(text: str) -> int:
+            return len(text) // 4 + 1
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            runs = root / "runs"
+            runs.mkdir()
+            sessions = root / "sessions"
+            sessions.mkdir()
+            for index in range(12):
+                _write_session(
+                    sessions / f"session-{index:02d}.jsonl",
+                    f"Task number {index}.",
+                    f"Reply number {index}.",
+                )
+
+            with mock.patch(
+                "omp_gym.export.load_token_counter",
+                return_value=counter,
+            ):
+                stats = export_dataset(
+                    runs,
+                    sessions,
+                    root / "out_a",
+                    1.0,
+                    "unused-tokenizer",
+                    2048,
+                    min_quality=False,
+                )
+                export_dataset(
+                    runs,
+                    sessions,
+                    root / "out_b",
+                    1.0,
+                    "unused-tokenizer",
+                    2048,
+                    min_quality=False,
+                )
+
+            train_a = (root / "out_a" / "train.jsonl").read_text()
+            valid_a = (root / "out_a" / "valid.jsonl").read_text()
+            train_b = (root / "out_b" / "train.jsonl").read_text()
+            valid_b = (root / "out_b" / "valid.jsonl").read_text()
+
+        self.assertEqual(train_a, train_b)
+        self.assertEqual(valid_a, valid_b)
+        self.assertEqual(stats.train_samples, 11)
+        self.assertEqual(stats.valid_samples, 1)
+        self.assertEqual(stats.sessions_excluded_holdout, 0)
+        train_lines = set(train_a.splitlines())
+        valid_lines = set(valid_a.splitlines())
+        self.assertEqual(len(train_lines & valid_lines), 0)
+        self.assertEqual(len(train_lines | valid_lines), 12)
 
 
 if __name__ == "__main__":

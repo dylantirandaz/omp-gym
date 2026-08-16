@@ -204,19 +204,38 @@ Episodes are not sandboxed. `omp-gym run` starts a real omp
 session with auto-approval on this machine, in a copied workspace
 that is not a security boundary. The episode can run shell
 commands, read the filesystem, and see the provider keys from
-`.env`. Task test commands come from `task.toml` and run with your
-user account; the loader accepts only `python3`, `python`, `node`,
-`pytest`, and `sh` as the first word. Run only tasks and session
-imports that you trust, and use a dedicated key with a spend limit.
+`.env` (other host variables stay out; the child environment is a
+small whitelist). Task test commands come from `task.toml` and run
+with your user account; the loader accepts only `python3`,
+`python`, `node`, and `pytest` as the first word. Test files are
+hashed before each episode; an episode that changes them scores
+zero and its tests do not run. Run only tasks and session imports
+that you trust, and use a dedicated key with a spend limit.
 
 ## Data locations
 
 `runs/`, `dataset*/`, `imported/`, `adapters/`, `experiments/`,
-`holdout-results/`, `gym.toml`, and `.env` are gitignored. The
-exporter redacts credential-shaped text and keeps datasets on this
-machine; the trainer makes no network calls beyond the model
-download. Episodes contact the configured model provider, as any
-omp run does.
+`holdout-results/`, `tasks/minted/`, `gym.toml`, and `.env` are
+gitignored. Minted tasks stay local because they are rebuilt from
+session transcripts and can embed private work. The exporter and
+the minter redact credential-shaped text, but redaction is a
+filter, not a guarantee: review before you publish anything.
+Episodes contact the configured model provider, as any omp run
+does.
+
+## Known limits
+
+- Bench numbers use one trial per cell unless you raise
+  `--trials`; treat single-trial numbers as samples, not scores.
+- `rl` is REINFORCE with a group-mean baseline, not GRPO: no KL
+  term, no clipping, and the gradient lands on the first
+  assistant turn only.
+- `gate` is a first-pass detector built on hand-picked leak
+  markers and one tuned threshold, not a general memorization
+  test.
+- The numbers under "Measured results" come from local runs;
+  the artifacts behind them are gitignored, so they are claims
+  about this machine, not reproducible from the repository.
 
 ## Measured results
 

@@ -99,7 +99,7 @@ def _dpo_loss(policy, batch, ref_lps, beta, pad_to):
     """Mean sigmoid-DPO loss over a batch of pairs."""
     losses = []
     for (prompt_ids, chosen_ids, rejected_ids), (ref_c, ref_r) in zip(
-        batch, ref_lps
+        batch, ref_lps, strict=True
     ):
         pol_c = _completion_logprob(policy, prompt_ids, chosen_ids, pad_to)
         pol_r = _completion_logprob(

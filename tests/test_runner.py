@@ -1,11 +1,15 @@
-import unittest
+import shutil
 import tempfile
+import unittest
 from pathlib import Path
 
 from omp_gym.runner import (
+    _changed_protected_files,
     _episode_environment,
     _episode_prompt,
+    _file_digests,
     _partial_credit,
+    _protected_files,
 )
 from omp_gym.task import TaskSpec
 
@@ -72,6 +76,110 @@ class PartialCreditTests(unittest.TestCase):
 
     def test_returns_none_without_counts(self) -> None:
         self.assertIsNone(_partial_credit("Segmentation fault"))
+
+
+def make_task(workspace: Path, test_command: tuple[str, ...]) -> TaskSpec:
+    return TaskSpec(
+        name="fix-app",
+        prompt="Fix app.py.",
+        test_command=test_command,
+        tools="read,write,bash",
+        max_time="60",
+        workspace=workspace,
+    )
+
+
+class ProtectedFilesTests(unittest.TestCase):
+    def test_collects_command_args_test_names_and_tests_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            (workspace / "app.py").write_text("answer = 0\n")
+            (workspace / "cases.txt").write_text("1\n")
+            (workspace / "test_app.py").write_text("import app\n")
+            (workspace / "lib").mkdir()
+            (workspace / "lib" / "app_test.js").write_text("check()\n")
+            (workspace / "tests").mkdir()
+            (workspace / "tests" / "helper.py").write_text("pass\n")
+            task = make_task(
+                workspace, ("python3", "test_app.py", "cases.txt")
+            )
+
+            protected = _protected_files(task)
+
+        self.assertEqual(
+            protected,
+            (
+                "cases.txt",
+                "lib/app_test.js",
+                "test_app.py",
+                "tests/helper.py",
+            ),
+        )
+
+    def test_ignores_command_args_that_are_not_workspace_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            workspace = Path(temporary_directory)
+            (workspace / "app.py").write_text("answer = 0\n")
+            task = make_task(workspace, ("python3", "-m", "unittest"))
+
+            protected = _protected_files(task)
+
+        self.assertEqual(protected, ())
+
+
+class ChangedProtectedFilesTests(unittest.TestCase):
+    def make_pristine(self, root: Path) -> Path:
+        pristine = root / "pristine"
+        pristine.mkdir()
+        (pristine / "app.py").write_text("answer = 0\n")
+        (pristine / "test_app.py").write_text(
+            "import app\nassert app.answer == 42\n"
+        )
+        return pristine
+
+    def test_truncated_test_file_is_caught_and_named(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            pristine = self.make_pristine(root)
+            task = make_task(pristine, ("python3", "test_app.py"))
+            protected = _protected_files(task)
+            digests = _file_digests(pristine, protected)
+            episode = root / "ws"
+            shutil.copytree(pristine, episode)
+            (episode / "app.py").write_text("answer = 42\n")
+            (episode / "test_app.py").write_text("")
+
+            changed = _changed_protected_files(episode, digests)
+
+        self.assertEqual(changed, ("test_app.py",))
+
+    def test_deleted_test_file_is_caught(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            pristine = self.make_pristine(root)
+            task = make_task(pristine, ("python3", "test_app.py"))
+            digests = _file_digests(pristine, _protected_files(task))
+            episode = root / "ws"
+            shutil.copytree(pristine, episode)
+            (episode / "test_app.py").unlink()
+
+            changed = _changed_protected_files(episode, digests)
+
+        self.assertEqual(changed, ("test_app.py",))
+
+    def test_untouched_test_files_pass_the_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            pristine = self.make_pristine(root)
+            task = make_task(pristine, ("python3", "test_app.py"))
+            digests = _file_digests(pristine, _protected_files(task))
+            episode = root / "ws"
+            shutil.copytree(pristine, episode)
+            (episode / "app.py").write_text("answer = 42\n")
+
+            changed = _changed_protected_files(episode, digests)
+
+        self.assertEqual(changed, ())
 
 
 if __name__ == "__main__":

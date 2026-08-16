@@ -24,12 +24,12 @@ exported.
 """
 
 import json
+import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .mint import _CORRECTION
 from .trajectory import (
     AssistantStep,
     ToolCall,
@@ -56,10 +56,26 @@ SYSTEM_PROMPT = (
     "Inspect each result. Run the tests again. Do not report success until they pass."
 )
 
-_KEY_LITERAL_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+_TOKEN_LITERAL_PATTERN = re.compile(
+    r"\b(?:"
+    r"sk-[A-Za-z0-9_-]{8,}"
+    r"|ghp_[A-Za-z0-9]{20,}"
+    r"|github_pat_[A-Za-z0-9_]{20,}"
+    r"|gho_[A-Za-z0-9]{20,}"
+    r"|xox[baprs]-[A-Za-z0-9-]{10,}"
+    r"|AKIA[A-Z0-9]{16}"
+    r"|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}[A-Za-z0-9_.-]*"
+    r")"
+)
+_BEARER_PATTERN = re.compile(r"(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}")
 _SECRET_ASSIGNMENT_PATTERN = re.compile(
-    r"(?i)((?:api[_-]?key|secret|token|password|authorization)"
-    r"[A-Za-z0-9_-]*\s*[=:]\s*)(\S+)"
+    r"(?i)(?<![\w-])"
+    r"((['\"]?)"
+    r"(?:api[-_]?key|secrets?|password|passwd|authorization"
+    r"|access_token|auth_token|refresh_token|private_key"
+    r"|client_secret)"
+    r"\2\s*[=:]\s*)"
+    r"(?:(['\"])(?![^'\"]*\()[^'\"]{8,}\3|(?!\S*\()\S{8,})"
 )
 
 
@@ -68,10 +84,15 @@ def _redact(text: str) -> str:
 
     Session transcripts carry raw tool output. A key that appears
     in an environment dump or a stack trace must not reach the
-    dataset.
+    dataset. Three rules apply. Known token literals always go.
+    A Bearer header keeps the word Bearer and loses the token.
+    An assignment goes only when the key is a whole secret word
+    and the value is at least 8 characters with no parenthesis,
+    so code expressions survive.
     """
-    text = _KEY_LITERAL_PATTERN.sub("[REDACTED]", text)
-    return _SECRET_ASSIGNMENT_PATTERN.sub(r"\1[REDACTED]", text)
+    text = _TOKEN_LITERAL_PATTERN.sub("[REDACTED]", text)
+    text = _BEARER_PATTERN.sub(r"\1[REDACTED]", text)
+    return _SECRET_ASSIGNMENT_PATTERN.sub(r"\1\3[REDACTED]\3", text)
 
 
 TASK_PROMPT_PREFIX = "Complete the task in this repository."
@@ -111,6 +132,7 @@ class ExportStats:
     episodes_seen: int
     sessions_seen: int
     sessions_filtered: int
+    sessions_excluded_holdout: int
     trajectories_exported: int
     turns_exported: int
     turns_skipped_oversize: int
@@ -154,26 +176,40 @@ def _normalize_tool_arguments(
     return normalized
 
 
+def _authoring_target_path(call: ToolCall) -> str | None:
+    """Return the workspace-relative path an edit or write touches."""
+    arguments = _normalize_tool_arguments(call.arguments)
+    path_argument = arguments.get("path")
+    if isinstance(path_argument, str) and path_argument:
+        return path_argument
+    patch = arguments.get("input")
+    if not isinstance(patch, str):
+        return None
+    found = _PATCH_FILE_PATTERN.search(patch)
+    return found.group(1) if found is not None else None
+
+
 def _canonical_training_call(
     call: ToolCall,
     authoring_workspace: Path | None,
+    final_for_path: bool = True,
 ) -> tuple[str, dict[str, object]]:
-    """Render successful edits as simple full-file writes."""
+    """Render the final successful edit of a file as a full write.
+
+    Only the last file-touching call for a path leaves the file in
+    its on-disk state, so only that call gets the file content as
+    its label. Earlier edits keep their real patch arguments, and
+    write calls always keep their own content.
+    """
     arguments = _normalize_tool_arguments(call.arguments)
-    if call.name != "edit" or authoring_workspace is None:
+    if (
+        call.name != "edit"
+        or authoring_workspace is None
+        or not final_for_path
+    ):
         return call.name, arguments
-    path_argument = arguments.get("path")
-    if isinstance(path_argument, str):
-        relative_path = path_argument
-    else:
-        patch = arguments.get("input")
-        if not isinstance(patch, str):
-            return call.name, arguments
-        found = _PATCH_FILE_PATTERN.search(patch)
-        if found is None:
-            return call.name, arguments
-        relative_path = found.group(1)
-    if Path(relative_path).is_absolute():
+    relative_path = _authoring_target_path(call)
+    if relative_path is None or Path(relative_path).is_absolute():
         return call.name, arguments
     workspace = authoring_workspace.resolve()
     final_file = (workspace / relative_path).resolve()
@@ -195,6 +231,26 @@ def _canonical_training_call(
 _AUTHORING_TOOL_NAMES = frozenset({"edit", "write"})
 
 
+def _final_authoring_call_ids(
+    trajectory: Trajectory,
+    failed_authoring_call_ids: frozenset[str],
+) -> frozenset[str]:
+    """Call ids of the last successful file-touching call per path."""
+    last_call_by_path: dict[str, str] = {}
+    for step in trajectory.steps:
+        if not isinstance(step, AssistantStep):
+            continue
+        for call in step.tool_calls:
+            if call.name not in _AUTHORING_TOOL_NAMES:
+                continue
+            if call.call_id in failed_authoring_call_ids:
+                continue
+            target = _authoring_target_path(call)
+            if target is not None:
+                last_call_by_path[target] = call.call_id
+    return frozenset(last_call_by_path.values())
+
+
 def _render_messages(
     trajectory: Trajectory,
     prompt: str | None,
@@ -211,6 +267,9 @@ def _render_messages(
         if isinstance(step, ToolResultStep)
         and step.is_error
         and step.tool_name in _AUTHORING_TOOL_NAMES
+    )
+    final_authoring_call_ids = _final_authoring_call_ids(
+        trajectory, failed_authoring_call_ids
     )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -230,6 +289,7 @@ def _render_messages(
                     name, arguments = _canonical_training_call(
                         call,
                         authoring_workspace,
+                        call.call_id in final_authoring_call_ids,
                     )
                     payload = json.dumps(
                         {
@@ -360,6 +420,8 @@ def _session_failed(session_file: Path, trajectory: Trajectory) -> bool:
     the user corrected the agent and no work followed the last
     correction. Sessions without any of these pass the filter.
     """
+    from .mint import _CORRECTION
+
     raw = session_file.read_text()
     if '"stopReason": "error"' in raw:
         return True
@@ -388,15 +450,19 @@ def _session_failed(session_file: Path, trajectory: Trajectory) -> bool:
 def _collect_session_messages(
     sessions_root: Path,
     min_quality: bool,
-) -> tuple[list[list[dict[str, str]]], int, int, int]:
-    """Render all omp sessions: (rendered, seen, filtered, torn).
+) -> tuple[list[list[dict[str, str]]], int, int, int, int]:
+    """Render all omp sessions.
 
+    Returns (rendered, seen, filtered, excluded_holdout, torn).
     With min_quality on, sessions that ended as failures do not
     enter the SFT dataset. They remain available for DPO pairs.
+    Sessions that mention the holdout task directory never enter
+    the dataset: training on them would leak the benchmark.
     """
     rendered: list[list[dict[str, str]]] = []
     seen = 0
     filtered = 0
+    excluded_holdout = 0
     torn = 0
     for session_file in sorted(sessions_root.rglob("*.jsonl")):
         seen += 1
@@ -405,8 +471,12 @@ def _collect_session_messages(
         if min_quality and _session_failed(session_file, trajectory):
             filtered += 1
             continue
-        rendered.append(_render_messages(trajectory, prompt=None))
-    return rendered, seen, filtered, torn
+        messages = _render_messages(trajectory, prompt=None)
+        if any("holdout-tasks" in message["content"] for message in messages):
+            excluded_holdout += 1
+            continue
+        rendered.append(messages)
+    return rendered, seen, filtered, excluded_holdout, torn
 
 
 @dataclass(frozen=True)
@@ -528,7 +598,9 @@ def export_pairs(
     out_dir.mkdir(parents=True, exist_ok=True)
     if len(documents) > 1:
         valid_count = max(1, len(documents) // VALID_TRAJECTORY_SHARE)
-        train, valid = documents[:-valid_count], documents[-valid_count:]
+        shuffled = list(documents)
+        random.Random(7).shuffle(shuffled)
+        train, valid = shuffled[valid_count:], shuffled[:valid_count]
     else:
         train, valid = documents, documents
     (out_dir / "train.jsonl").write_text("\n".join(train) + ("\n" if train else ""))
@@ -554,21 +626,25 @@ def export_dataset(
 
     The train/valid split separates whole trajectories so that no
     session contributes samples to both files. The valid set takes
-    the smallest trajectories until it holds about one tenth of the
-    samples.
+    randomly chosen trajectories, with a fixed seed, until it holds
+    about one tenth of the samples.
     """
     count_tokens = load_token_counter(tokenizer_id)
     episode_msgs, episodes_seen, episode_torn = _collect_episode_messages(
         runs_dir, min_reward
     )
     if sessions_root.is_dir():
-        session_msgs, sessions_seen, sessions_filtered, session_torn = (
-            _collect_session_messages(sessions_root, min_quality)
-        )
+        (
+            session_msgs,
+            sessions_seen,
+            sessions_filtered,
+            excluded_holdout,
+            session_torn,
+        ) = _collect_session_messages(sessions_root, min_quality)
     else:
         print(f"note: sessions root {sessions_root} does not exist")
         session_msgs, sessions_seen = [], 0
-        sessions_filtered, session_torn = 0, 0
+        sessions_filtered, excluded_holdout, session_torn = 0, 0, 0
 
     splits = [
         _split_turns(messages, count_tokens, token_cap)
@@ -585,6 +661,7 @@ def export_dataset(
             episodes_seen=episodes_seen,
             sessions_seen=sessions_seen,
             sessions_filtered=sessions_filtered,
+            sessions_excluded_holdout=excluded_holdout,
             trajectories_exported=0,
             turns_exported=0,
             turns_skipped_oversize=skipped,
@@ -599,7 +676,8 @@ def export_dataset(
     else:
         total_samples = sum(len(split.samples) for split in splits)
         valid_budget = max(1, total_samples // VALID_TRAJECTORY_SHARE)
-        ordered = sorted(splits, key=lambda split: len(split.samples))
+        ordered = list(splits)
+        random.Random(7).shuffle(ordered)
         valid_splits = []
         valid_taken = 0
         for split in ordered:
@@ -618,6 +696,7 @@ def export_dataset(
         episodes_seen=episodes_seen,
         sessions_seen=sessions_seen,
         sessions_filtered=sessions_filtered,
+        sessions_excluded_holdout=excluded_holdout,
         trajectories_exported=len(splits),
         turns_exported=len(train) + len(valid),
         turns_skipped_oversize=skipped,

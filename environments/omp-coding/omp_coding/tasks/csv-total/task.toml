@@ -5,3 +5,4 @@ sum of one numeric column. Do not change the test file or the data
 file. Run `python3 test_report.py` to confirm that all tests pass.
 """
 test_command = ["python3", "test_report.py"]
+context_files = ["report.py", "test_report.py", "data.csv"]

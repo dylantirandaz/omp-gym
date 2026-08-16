@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ALLOWED_TEST_RUNNERS = frozenset({"python3", "python", "node", "pytest", "sh"})
+ALLOWED_TEST_RUNNERS = frozenset({"python3", "python", "node", "pytest"})
 
 
 @dataclass(frozen=True)

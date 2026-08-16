@@ -8,12 +8,14 @@ is enforced by the agent against the ledger; the time budget is
 enforced by the process.
 """
 
+import os
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from .ledger import append_entry, read_ledger
+from .runner import _episode_environment
 
 PROMPT_TEMPLATE = """You are the omp-gym operator. Read the skill at
 .agents/skills/omp-gym/SKILL.md first and follow it.
@@ -87,11 +89,17 @@ def run_improve(
     started = time.monotonic()
     timed_out = False
     try:
+        # The child gets the same whitelisted environment as an
+        # episode: basic host variables plus the .env provider
+        # keys, not the full parent environment. The remaining
+        # trust is the verb itself: the operator can edit this
+        # repository, so run it only when you accept that.
         completed = subprocess.run(
             command,
             capture_output=True,
             text=True,
             timeout=max_time + 120,
+            env=_episode_environment(os.environ, None),
         )
         exit_code = completed.returncode
         stdout = completed.stdout
