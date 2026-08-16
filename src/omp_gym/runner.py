@@ -302,6 +302,10 @@ def run_episode(
             text=True,
             timeout=deadline,
             env=_episode_environment(os.environ, extra_env),
+            # An open stdin pipe makes `omp -p` wait for EOF before
+            # it starts; under a process supervisor that pipe never
+            # closes and the episode hangs to its deadline.
+            stdin=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired as timeout_error:
         stdout = timeout_error.stdout
@@ -353,6 +357,7 @@ def run_episode(
             capture_output=True,
             text=True,
             timeout=120,
+            stdin=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired:
         (episode_dir / "test_output.log").write_text(
