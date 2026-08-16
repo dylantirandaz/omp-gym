@@ -9,8 +9,8 @@ gap with the same convention the omp-gym adapters are trained on:
   system message;
 - the upstream request runs without `tools`, so the model answers
   in plain text;
-- `<tool_call>{json}</tool_call>` blocks in the text are parsed
-  into real OpenAI `tool_calls`;
+- tool-call JSON in the text is parsed into real OpenAI
+  `tool_calls`, whether tagged, fenced, or bare;
 - streaming requests are answered as a short SSE burst built from
   the finished upstream response.
 """
@@ -32,10 +32,11 @@ _SHELL_FENCE_PATTERN = re.compile(
     r"|npm\s+test[^\n]*|cargo\s+test[^\n]*)\s*\n?)```",
     re.DOTALL,
 )
+_TAG_LINE_PATTERN = re.compile(r"\s*(?:\ufffd+|</?[A-Za-z_][\w-]*>)\s*")
 
 TOOL_PROTOCOL = (
-    "\n\nTo call a tool, write a <tool_call> block that contains one "
-    'JSON object: {"name": ..., "arguments": {...}}. '
+    "\n\nTo call a tool, write one JSON object on its own line: "
+    '{"name": ..., "arguments": {...}}. '
     "Available tools:\n"
 )
 
@@ -162,6 +163,45 @@ def _call_from_payload(
     }
 
 
+def _bare_json_calls(
+    text: str,
+    available_tools: tuple[AvailableTool, ...],
+) -> list[dict] | None:
+    """Read a text that is only JSON calls between decoration lines.
+
+    Small tuned models wrap bare JSON calls in improvised angle tags
+    (for example <lemma>) or replacement characters. Keep the JSON
+    objects when nothing else is present. Refuse prose. A truncated
+    JSON tail drops; the completed calls before it still run.
+    """
+    kept_lines = [
+        line
+        for line in text.splitlines()
+        if not _TAG_LINE_PATTERN.fullmatch(line)
+    ]
+    stripped = "\n".join(kept_lines).strip()
+    if not stripped.startswith("{"):
+        return None
+    decoder = json.JSONDecoder(strict=False)
+    calls: list[dict] = []
+    position = 0
+    while position < len(stripped):
+        if stripped[position].isspace():
+            position += 1
+            continue
+        if stripped[position] != "{":
+            return None
+        try:
+            payload, position = decoder.raw_decode(stripped, position)
+        except json.JSONDecodeError:
+            return calls or None
+        call = _call_from_payload(payload, len(calls), available_tools)
+        if call is None:
+            return None
+        calls.append(call)
+    return calls or None
+
+
 def _extract_tool_calls(
     text: str,
     available_tools: tuple[AvailableTool, ...],
@@ -178,7 +218,7 @@ def _extract_tool_calls(
         calls: list[dict] = []
         for index, found in enumerate(found_calls):
             try:
-                payload = json.loads(found.group(1))
+                payload = json.loads(found.group(1), strict=False)
             except json.JSONDecodeError:
                 calls = []
                 break
@@ -189,6 +229,10 @@ def _extract_tool_calls(
             calls.append(call)
         if calls:
             return pattern.sub("", text).strip(), calls
+
+    scanned_calls = _bare_json_calls(text, available_tools)
+    if scanned_calls is not None:
+        return "", scanned_calls
 
     shell = _SHELL_FENCE_PATTERN.search(text)
     if shell:
@@ -204,7 +248,7 @@ def _extract_tool_calls(
     trimmed = text.strip().strip("\ufffd").strip()
     if trimmed.startswith("{") and trimmed.endswith("}"):
         try:
-            payload = json.loads(trimmed)
+            payload = json.loads(trimmed, strict=False)
         except json.JSONDecodeError:
             return trimmed, []
         call = _call_from_payload(payload, 0, available_tools)
@@ -237,7 +281,11 @@ def _rewrite_request(body: dict, adapter_path: str | None = None) -> dict:
         messages = [dict(m) for m in upstream.get("messages", [])]
         has_protocol = any(
             message.get("role") in {"system", "developer"}
-            and "<tool_call>" in str(message.get("content", ""))
+            and (
+                "<tool_call>" in str(message.get("content", ""))
+                or "JSON object on its own line"
+                in str(message.get("content", ""))
+            )
             for message in messages
         )
         if not has_protocol:

@@ -43,9 +43,7 @@ class CurriculumRenderingTests(unittest.TestCase):
         assistant_content = messages[-1]["content"]
         self.assertNotIn("I will inspect", assistant_content)
         self.assertNotIn("internal plan", assistant_content)
-        payload_text = assistant_content.removeprefix("<tool_call>\n")
-        payload_text = payload_text.removesuffix("\n</tool_call>")
-        payload = json.loads(payload_text)
+        payload = json.loads(assistant_content)
         self.assertEqual(payload["arguments"]["path"], "src/main.py")
 
     def test_terminal_turn_keeps_its_result_text(self) -> None:
@@ -163,11 +161,7 @@ class CurriculumRenderingTests(unittest.TestCase):
         assistant_content = next(
             message["content"] for message in messages if message["role"] == "assistant"
         )
-        payload = json.loads(
-            assistant_content.removeprefix("<tool_call>\n").removesuffix(
-                "\n</tool_call>"
-            )
-        )
+        payload = json.loads(assistant_content)
         self.assertEqual(payload["name"], "write")
         self.assertEqual(
             payload["arguments"],

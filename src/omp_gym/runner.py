@@ -164,17 +164,28 @@ def run_episode(
         command.extend(["--model", model])
 
     started = time.monotonic()
-    omp_run = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        timeout=int(task.max_time) + 120,
-        env={
-            **_without_parent_runtime(os.environ),
-            **load_env_file(Path(".env")),
-            **(extra_env if extra_env else {}),
-        },
-    )
+    deadline = int(task.max_time) + 120
+    try:
+        omp_run = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=deadline,
+            env={
+                **_without_parent_runtime(os.environ),
+                **load_env_file(Path(".env")),
+                **(extra_env if extra_env else {}),
+            },
+        )
+    except subprocess.TimeoutExpired as timeout_error:
+        stdout = timeout_error.stdout
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode(errors="replace")
+        (episode_dir / "events.jsonl").write_text(stdout or "")
+        return EpisodeFailure(
+            task=task.name,
+            reason=f"omp exceeded the {deadline}s episode deadline",
+        )
     duration = time.monotonic() - started
     (episode_dir / "events.jsonl").write_text(omp_run.stdout)
     if omp_run.stderr:

@@ -15,9 +15,12 @@ tokenizer and chat template, so no sample can lose its completion
 to truncation during training. Train with prompt masking so that
 only the final assistant message produces loss.
 
-Tool calls are rendered as <tool_call> JSON blocks inside assistant
-content. Tool results are rendered as <tool_response> blocks inside
-user content. Tool-step prose and thinking blocks are not exported.
+Tool calls are rendered as bare JSON objects on their own lines in
+assistant content: the serving shim parses that envelope, and small
+models cannot round-trip the <tool_call> special token through the
+server decode. Tool results are rendered as <tool_response> blocks
+inside user content. Tool-step prose and thinking blocks are not
+exported.
 """
 
 import json
@@ -38,7 +41,7 @@ from .trajectory import (
 
 SYSTEM_PROMPT = (
     "You are a coding agent. Work in the current repository through tools.\n"
-    "Call a tool with one <tool_call> block that contains JSON:\n"
+    "Write one JSON object on its own line for each tool call:\n"
     '{"name": "read", "arguments": {"path": "relative path", "i": "purpose"}}\n'
     'bash arguments: {"command": "command", "i": "purpose"}\n'
     'edit arguments: {"input": "hashline patch", "i": "purpose"}\n'
@@ -215,7 +218,7 @@ def _render_messages(
                             "arguments": arguments,
                         }
                     )
-                    parts.append(f"<tool_call>\n{payload}\n</tool_call>")
+                    parts.append(payload)
                 content = "\n".join(parts)
                 if content:
                     messages.append({"role": "assistant", "content": content})

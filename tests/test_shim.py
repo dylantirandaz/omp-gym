@@ -74,6 +74,68 @@ class ToolCallExtractionTests(unittest.TestCase):
         self.assertEqual(content, "")
         self.assertEqual(calls[0]["function"]["name"], "write")
 
+    def test_accepts_angle_tag_separated_json_calls(self) -> None:
+        read_call = json.dumps(
+            {"name": "read", "arguments": {"path": "slug.py"}}
+        )
+        bash_call = json.dumps(
+            {"name": "bash", "arguments": {"command": "python3 test_slug.py"}}
+        )
+
+        content, calls = _extract_tool_calls(
+            f"<lemma>\n{read_call}\n<lemma>\n<lemma>\n{bash_call}\n<lemma>",
+            self.available_tools,
+        )
+
+        self.assertEqual(content, "")
+        self.assertEqual(
+            [call["function"]["name"] for call in calls],
+            ["read", "bash"],
+        )
+
+    def test_keeps_calls_before_a_truncated_tail(self) -> None:
+        read_call = json.dumps(
+            {"name": "read", "arguments": {"path": "slug.py"}}
+        )
+
+        content, calls = _extract_tool_calls(
+            f'<lemma>\n{read_call}\n<lemma>\n{{"name": "write", "argu',
+            self.available_tools,
+        )
+
+        self.assertEqual(content, "")
+        self.assertEqual(
+            [call["function"]["name"] for call in calls],
+            ["read"],
+        )
+
+    def test_accepts_raw_newlines_inside_fenced_json_strings(self) -> None:
+        fenced = (
+            '```json\n{\n  "name": "write",\n  "arguments": {\n'
+            '    "path": "intervals.py",\n'
+            '    "content": "def merge(a):\n    return a\n"\n  }\n}\n```'
+        )
+
+        content, calls = _extract_tool_calls(fenced, self.available_tools)
+
+        self.assertEqual(content, "")
+        self.assertEqual(calls[0]["function"]["name"], "write")
+        arguments = json.loads(calls[0]["function"]["arguments"])
+        self.assertIn("def merge(a):\n", arguments["content"])
+
+    def test_keeps_prose_around_json_as_content(self) -> None:
+        payload = json.dumps(
+            {"name": "read", "arguments": {"path": "slug.py"}}
+        )
+
+        content, calls = _extract_tool_calls(
+            f"I will read the file first.\n{payload}",
+            self.available_tools,
+        )
+
+        self.assertEqual(calls, [])
+        self.assertIn("read the file", content)
+
     def test_maps_an_invalid_exact_name_by_argument_shape(self) -> None:
         content, calls = self.extract(
             "read",
@@ -162,7 +224,7 @@ class RequestRewriteTests(unittest.TestCase):
 
         content = rewritten["messages"][0]["content"]
         self.assertTrue(content.startswith("Code carefully."))
-        self.assertIn("<tool_call>", content)
+        self.assertIn("JSON object on its own line", content)
         self.assertIn("- read:", content)
 
 
