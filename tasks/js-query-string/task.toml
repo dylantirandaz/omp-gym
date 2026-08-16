@@ -1,0 +1,10 @@
+prompt = """
+Implement the function parseQuery in query_string.mjs so that
+test_query_string.mjs passes. The function parses a URL query string
+into a plain object. Do not change the test file. Run
+`node test_query_string.mjs` to confirm that all tests pass.
+"""
+test_command = ["node", "test_query_string.mjs"]
+context_files = ["query_string.mjs", "test_query_string.mjs"]
+tools = "read,write,bash"
+max_time = "300"
