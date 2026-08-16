@@ -2,6 +2,7 @@
 .venv/
 runs/
 holdout-results/
+tasks/minted-rejected/
 bench-*.md
 bench-*.jsonl
 dataset*/

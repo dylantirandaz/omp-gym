@@ -7,6 +7,9 @@ One stdlib HTTP server, one embedded page, no framework.
 """
 
 import json
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -19,30 +22,45 @@ from .trajectory import AssistantStep, ToolResultStep, UserStep, parse_session
 from .page import DASHBOARD_PAGE
 
 _LENS_CACHE: dict[str, object] = {}
+_SAE_CACHE: dict[str, object] = {}
+_GPU_WORKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gpu")
+
+_TRAIN_LINE = re.compile(
+    r"Iter (\d+): Train loss ([\d.]+).*?"
+    r"It/sec ([\d.]+), Tokens/sec ([\d.]+).*?"
+    r"Peak mem ([\d.]+) GB"
+)
+_VAL_LINE = re.compile(r"Iter (\d+): Val loss ([\d.]+)")
 
 
-def _live_lens(prompt: str, model_id: str, adapter_dir: Path | None, top_k: int) -> dict:
-    """Compute a logit lens for an arbitrary prompt.
-
-    The model and tokenizer load once per server process and stay
-    cached; adapter weights apply on first load too.
-    """
-    import mlx.core as mx
+def _load_model(model_id: str, adapter_dir: Path | None):
+    """Load one model once per process. Apply LoRA layers on load."""
     from mlx_lm import load as mlx_load
-
-    from .inspect import _layer_predictions
 
     cache_key = f"{model_id}::{adapter_dir}"
     if cache_key not in _LENS_CACHE:
-        model, tokenizer = mlx_load(model_id)
-        if adapter_dir is not None:
+        if adapter_dir is None:
+            _LENS_CACHE[cache_key] = mlx_load(model_id)
+        else:
             weights = adapter_dir / "adapters.safetensors"
-            if weights.is_file():
-                model.load_weights(str(weights), strict=False)
-        _LENS_CACHE[cache_key] = (model, tokenizer)
-    model, tokenizer = _LENS_CACHE[cache_key]
+            if not weights.is_file():
+                raise FileNotFoundError(f"no adapter weights at {weights}")
+            _LENS_CACHE[cache_key] = mlx_load(
+                model_id, adapter_path=str(adapter_dir)
+            )
+    return _LENS_CACHE[cache_key]
 
-    ids = mx.array(tokenizer.encode(prompt))[None]
+
+def _live_lens(
+    prompt: str, model_id: str, adapter_dir: Path | None, top_k: int
+) -> dict:
+    """Compute a logit lens for an arbitrary prompt."""
+    import mlx.core as mx
+
+    from .inspect import _layer_predictions
+
+    model, tokenizer = _load_model(model_id, adapter_dir)
+    ids = mx.array(tokenizer.encode(prompt)[:256])[None]
     per_layer = _layer_predictions(model, ids, top_k)
     top_by_layer = []
     for top in per_layer:
@@ -59,6 +77,28 @@ def _live_lens(prompt: str, model_id: str, adapter_dir: Path | None, top_k: int)
     }
 
 
+def _lens_diff(
+    prompt: str, model_id: str, adapter_dir: Path, top_k: int
+) -> dict:
+    """Show the base lens and the adapter lens side by side."""
+    base = _live_lens(prompt, model_id, None, top_k)
+    tuned = _live_lens(prompt, model_id, adapter_dir, top_k)
+    diverges = [
+        base_tokens[0] != tuned_tokens[0]
+        for base_tokens, tuned_tokens in zip(
+            base["top_by_layer"], tuned["top_by_layer"]
+        )
+    ]
+    return {
+        "prompt": prompt,
+        "model": model_id,
+        "adapter": str(adapter_dir),
+        "base": base["top_by_layer"],
+        "adapter_top": tuned["top_by_layer"],
+        "diverges": diverges,
+    }
+
+
 def _latest_artifact(experiments_dir: Path, prefix: str) -> dict | None:
     """Read the newest experiment artifact with a given prefix."""
     candidates = sorted(experiments_dir.glob(f"{prefix}-*.json"))
@@ -68,6 +108,281 @@ def _latest_artifact(experiments_dir: Path, prefix: str) -> dict | None:
             return json.loads(single.read_text())
         return None
     return json.loads(candidates[-1].read_text())
+
+
+def _train_reports(runs_dir: Path) -> list[dict[str, object]]:
+    """Collect train reports from adapters and fetched run trees."""
+    report_paths = [
+        *Path("adapters").glob("*/train_report.json"),
+        *runs_dir.rglob("train_report.json"),
+    ]
+    reports: list[dict[str, object]] = []
+    for report_path in report_paths:
+        try:
+            payload = json.loads(report_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        payload["report_path"] = str(report_path)
+        payload["modified"] = report_path.stat().st_mtime
+        reports.append(payload)
+    reports.sort(key=lambda report: report["modified"], reverse=True)
+    return reports[:12]
+
+
+def _live_training(log_path: Path) -> dict[str, object] | None:
+    """Parse an mlx-lm training log that a job mirror appends to."""
+    if not log_path.is_file():
+        return None
+    text = log_path.read_text()[-200_000:]
+    iterations: list[int] = []
+    losses: list[float] = []
+    tokens_per_second: float | None = None
+    peak_memory_gb: float | None = None
+    for match in _TRAIN_LINE.finditer(text):
+        iterations.append(int(match.group(1)))
+        losses.append(float(match.group(2)))
+        tokens_per_second = float(match.group(4))
+        peak_memory_gb = float(match.group(5))
+    validations = [
+        {"iteration": int(match.group(1)), "loss": float(match.group(2))}
+        for match in _VAL_LINE.finditer(text)
+    ]
+    return {
+        "path": str(log_path),
+        "age_seconds": round(time.time() - log_path.stat().st_mtime, 1),
+        "iterations": iterations,
+        "losses": losses,
+        "validations": validations,
+        "tokens_per_second": tokens_per_second,
+        "peak_memory_gb": peak_memory_gb,
+    }
+
+
+def _holdout_names() -> set[str]:
+    """The names of the sealed holdout tasks."""
+    root = Path("holdout-tasks")
+    if not root.is_dir():
+        return set()
+    return {
+        entry.name
+        for entry in root.iterdir()
+        if (entry / "task.toml").is_file()
+    }
+
+
+def _merge_cell(
+    cells: dict[str, dict[str, int]],
+    task: str,
+    reward: float,
+    error: object,
+) -> None:
+    """Fold one bench row into a task cell."""
+    cell = cells.setdefault(task, {"passes": 0, "trials": 0, "errors": 0})
+    if error:
+        cell["errors"] += 1
+        return
+    cell["trials"] += 1
+    if reward >= 1.0:
+        cell["passes"] += 1
+
+
+def _ledger_matrix_rows(ledger_path: Path) -> list[dict[str, object]]:
+    """Bench rows from the ledger, labeled by the preceding serve."""
+    entries, _ = read_ledger(ledger_path)
+    serve_label: str | None = None
+    rows: list[dict[str, object]] = []
+    for entry in entries:
+        if entry.kind == "serve":
+            model_id = entry.config.get("model_id")
+            serve_label = str(model_id) if model_id else None
+            continue
+        if entry.kind != "bench":
+            continue
+        grouped: dict[str, dict[str, dict[str, int]]] = {}
+        for row in entry.metrics.get("rows", []):
+            if not isinstance(row, dict):
+                continue
+            model = str(row.get("model", "?"))
+            label = model
+            if model.startswith("omp-gym/") and serve_label:
+                label = serve_label
+            _merge_cell(
+                grouped.setdefault(label, {}),
+                str(row.get("task", "?")),
+                float(row.get("reward") or 0.0),
+                row.get("error"),
+            )
+        for label, cells in grouped.items():
+            rows.append(
+                {"label": label, "when": entry.timestamp, "cells": cells}
+            )
+    return rows
+
+
+def _file_matrix_rows() -> list[dict[str, object]]:
+    """Bench rows from fetched or local bench row files."""
+    candidates = list(Path(".").glob("bench-*.jsonl"))
+    holdout_results = Path("holdout-results")
+    if holdout_results.is_dir():
+        candidates.extend(holdout_results.rglob("*report*.jsonl"))
+    rows: list[dict[str, object]] = []
+    for rows_path in candidates:
+        try:
+            lines = rows_path.read_text().splitlines()
+        except OSError:
+            continue
+        cells_by_model: dict[str, dict[str, dict[str, int]]] = {}
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                cells_by_model = {}
+                break
+            if not isinstance(row, dict) or "task" not in row:
+                cells_by_model = {}
+                break
+            _merge_cell(
+                cells_by_model.setdefault(str(row.get("model", "?")), {}),
+                str(row["task"]),
+                float(row.get("reward") or 0.0),
+                row.get("error"),
+            )
+        if not cells_by_model:
+            continue
+        source = (
+            rows_path.stem.replace("-report", "")
+            .replace("report", "")
+            .strip("-")
+        ) or rows_path.parent.name
+        when = time.strftime(
+            "%Y-%m-%dT%H:%M", time.localtime(rows_path.stat().st_mtime)
+        )
+        for model, cells in cells_by_model.items():
+            label = f"{model.split('/')[-1]} · {source}"
+            rows.append({"label": label, "when": when, "cells": cells})
+    return rows
+
+
+def _bench_matrix(ledger_path: Path) -> dict[str, object]:
+    """The run x task grid across ledger and fetched benches."""
+    rows = _ledger_matrix_rows(ledger_path) + _file_matrix_rows()
+    rows.sort(key=lambda row: str(row["when"]), reverse=True)
+    holdout = _holdout_names()
+    tasks: set[str] = set()
+    for row in rows:
+        cells = row["cells"]
+        assert isinstance(cells, dict)
+        tasks.update(cells.keys())
+    train_tasks = sorted(tasks - holdout)
+    holdout_tasks = sorted(tasks & holdout)
+    return {
+        "tasks": train_tasks + holdout_tasks,
+        "holdout": holdout_tasks,
+        "rows": rows[:40],
+    }
+
+
+def _latest_sae() -> dict | None:
+    """The newest SAE artifact that still has its weights file."""
+    artifact = _latest_artifact(Path("experiments"), "sae")
+    if artifact is None:
+        return None
+    weights = artifact.get("weights")
+    if not weights or not Path(str(weights)).is_file():
+        return None
+    return artifact
+
+
+def _sae_weights(weights_path: str):
+    """Load SAE weights once per process."""
+    import mlx.core as mx
+
+    if weights_path not in _SAE_CACHE:
+        _SAE_CACHE[weights_path] = mx.load(weights_path)
+    return _SAE_CACHE[weights_path]
+
+
+def _sae_tokens(prompt: str) -> dict:
+    """Per-token SAE feature activations for one prompt."""
+    import mlx.core as mx
+
+    from .sae import _captured_forward
+
+    meta = _latest_sae()
+    if meta is None:
+        return {"error": "no SAE artifact; run omp-gym sae first"}
+    adapter = meta.get("adapter")
+    model, tokenizer = _load_model(
+        str(meta["model"]), Path(str(adapter)) if adapter else None
+    )
+    ids = tokenizer.encode(prompt)[:128]
+    if not ids:
+        return {"error": "empty prompt"}
+    weights = _sae_weights(str(meta["weights"]))
+    hidden = _captured_forward(
+        model, mx.array(ids)[None], int(meta["layer"])
+    )
+    z = mx.maximum(hidden @ weights["enc_w"].T + weights["enc_b"], 0)
+    mx.eval(z)
+    top_ids = mx.argsort(-z, axis=1)[:, :3].tolist()
+    tokens = []
+    for position, token_id in enumerate(ids):
+        features = [
+            {
+                "id": feature_id,
+                "activation": round(float(z[position, feature_id]), 3),
+            }
+            for feature_id in top_ids[position]
+            if float(z[position, feature_id]) > 0
+        ]
+        tokens.append(
+            {"text": tokenizer.decode([token_id]), "features": features}
+        )
+    peak = z.max(axis=0)
+    mx.eval(peak)
+    order = mx.argsort(-peak)[:8].tolist()
+    top_features = [
+        {"id": feature_id, "activation": round(float(peak[feature_id]), 3)}
+        for feature_id in order
+    ]
+    return {
+        "model": meta["model"],
+        "adapter": adapter,
+        "layer": meta["layer"],
+        "tokens": tokens,
+        "top_features": top_features,
+    }
+
+
+def _sae_steer(prompt: str, feature: int, alpha: float) -> dict:
+    """Steered against unsteered short completions for one prompt."""
+    import mlx.core as mx
+
+    from .steer import _generate
+
+    meta = _latest_sae()
+    if meta is None:
+        return {"error": "no SAE artifact; run omp-gym sae first"}
+    weights = _sae_weights(str(meta["weights"]))
+    feature_count = int(weights["dec_w"].shape[1])
+    if not 0 <= feature < feature_count:
+        return {"error": f"feature must be in 0..{feature_count - 1}"}
+    adapter = meta.get("adapter")
+    model, tokenizer = _load_model(
+        str(meta["model"]), Path(str(adapter)) if adapter else None
+    )
+    direction = weights["dec_w"][:, feature]
+    prompt_ids = mx.array(tokenizer.encode(prompt)[:128])
+    unsteered = _generate(model, tokenizer, prompt_ids, direction, 0.0, 48)
+    steered = _generate(model, tokenizer, prompt_ids, direction, alpha, 48)
+    return {
+        "feature": feature,
+        "alpha": alpha,
+        "unsteered": unsteered,
+        "steered": steered,
+    }
 
 
 def _episode_index(runs_dir: Path) -> list[dict[str, object]]:
@@ -123,6 +438,21 @@ def _transcript(runs_dir: Path, episode: str) -> list[dict[str, object]]:
                     }
                 )
     return steps
+
+
+def _episode_record(
+    runs_dir: Path, episode: str
+) -> dict[str, object] | None:
+    """The episode record plus the tail of its test output."""
+    record_path = runs_dir / episode / "episode.json"
+    if not record_path.is_file():
+        return None
+    record = json.loads(record_path.read_text())
+    test_log = runs_dir / episode / "test_output.log"
+    record["test_output"] = (
+        test_log.read_text()[-2000:] if test_log.is_file() else ""
+    )
+    return record
 
 
 def make_handler(ledger_path: Path, runs_dir: Path):
@@ -183,9 +513,25 @@ def make_handler(ledger_path: Path, runs_dir: Path):
             elif parsed.path == "/api/transcript":
                 episode = query.get("episode", [""])[0]
                 if "/" in episode or ".." in episode:
-                    self._send_json([])
+                    self._send_json({"record": None, "steps": []})
                     return
-                self._send_json(_transcript(runs_dir, episode))
+                self._send_json(
+                    {
+                        "record": _episode_record(runs_dir, episode),
+                        "steps": _transcript(runs_dir, episode),
+                    }
+                )
+            elif parsed.path == "/api/monitor":
+                self._send_json(
+                    {
+                        "live": _live_training(
+                            runs_dir / "live-train.log"
+                        ),
+                        "reports": _train_reports(runs_dir),
+                    }
+                )
+            elif parsed.path == "/api/matrix":
+                self._send_json(_bench_matrix(ledger_path))
             elif parsed.path == "/api/lens":
                 prompt = query.get("prompt", [""])[0]
                 if not prompt:
@@ -195,12 +541,70 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                 adapter_raw = query.get("adapter", [None])[0]
                 try:
                     self._send_json(
-                        _live_lens(
+                        _GPU_WORKER.submit(
+                            _live_lens,
                             prompt,
-                            model_id or "mlx-community/Qwen2.5-3B-Instruct-4bit",
+                            model_id
+                            or "mlx-community/Qwen2.5-3B-Instruct-4bit",
                             Path(adapter_raw) if adapter_raw else None,
                             3,
-                        )
+                        ).result()
+                    )
+                except Exception as error:
+                    self._send_json({"error": str(error)})
+            elif parsed.path == "/api/lensdiff":
+                prompt = query.get("prompt", [""])[0]
+                adapter_raw = query.get("adapter", [""])[0]
+                if not prompt or not adapter_raw:
+                    self._send_json(
+                        {"error": "prompt and adapter are required"}
+                    )
+                    return
+                model_id = (
+                    query.get("model", [None])[0]
+                    or "mlx-community/Qwen2.5-Coder-3B-Instruct-4bit"
+                )
+                try:
+                    self._send_json(
+                        _GPU_WORKER.submit(
+                            _lens_diff, prompt, model_id, Path(adapter_raw), 3
+                        ).result()
+                    )
+                except Exception as error:
+                    self._send_json({"error": str(error)})
+            elif parsed.path == "/api/sae/tokens":
+                prompt = query.get("prompt", [""])[0]
+                if not prompt:
+                    self._send_json({"error": "no prompt"})
+                    return
+                try:
+                    self._send_json(
+                        _GPU_WORKER.submit(_sae_tokens, prompt).result()
+                    )
+                except Exception as error:
+                    self._send_json({"error": str(error)})
+            elif parsed.path == "/api/sae/steer":
+                prompt = query.get("prompt", [""])[0]
+                feature_raw = query.get("feature", [""])[0]
+                alpha_raw = query.get("alpha", ["2"])[0]
+                if not prompt or not feature_raw:
+                    self._send_json(
+                        {"error": "prompt and feature are required"}
+                    )
+                    return
+                try:
+                    feature = int(feature_raw)
+                    alpha = float(alpha_raw)
+                except ValueError:
+                    self._send_json(
+                        {"error": "feature and alpha must be numbers"}
+                    )
+                    return
+                try:
+                    self._send_json(
+                        _GPU_WORKER.submit(
+                            _sae_steer, prompt, feature, alpha
+                        ).result()
                     )
                 except Exception as error:
                     self._send_json({"error": str(error)})

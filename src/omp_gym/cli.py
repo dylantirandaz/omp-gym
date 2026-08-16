@@ -338,6 +338,36 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ledger", type=Path, default=DEFAULT_LEDGER
     )
 
+    gate_parser = commands.add_parser(
+        "gate", help="flag adapters that memorize training tasks"
+    )
+    gate_parser.add_argument(
+        "--model", default="mlx-community/Qwen2.5-Coder-3B-Instruct-4bit"
+    )
+    gate_parser.add_argument("--adapter", type=Path, default=None)
+    gate_parser.add_argument(
+        "--sae",
+        type=Path,
+        default=None,
+        help="sae-weights-*.safetensors trained for the base model",
+    )
+    gate_parser.add_argument(
+        "--out", type=Path, default=Path("experiments")
+    )
+    gate_parser.add_argument(
+        "--holdout", type=Path, default=Path("holdout-tasks")
+    )
+    gate_parser.add_argument("--tasks", type=Path, default=Path("tasks"))
+    gate_parser.add_argument(
+        "--data",
+        type=Path,
+        default=Path("dataset"),
+        help="dataset used when a fresh SAE must be trained",
+    )
+    gate_parser.add_argument(
+        "--ledger", type=Path, default=DEFAULT_LEDGER
+    )
+
     rl_parser = commands.add_parser(
         "rl", help="group-relative policy gradient on live episodes"
     )
@@ -731,6 +761,35 @@ def _dispatch(args) -> None:
             artifacts={"sae": metrics["artifact"]},
         )
         raise SystemExit(0)
+    if args.command == "gate":
+        from .gate import run_gate
+
+        payload = run_gate(
+            model_id=args.model,
+            adapter_dir=args.adapter,
+            sae_weights=args.sae,
+            out_dir=args.out,
+            holdout_dir=args.holdout,
+            tasks_dir=args.tasks,
+            data_dir=args.data,
+        )
+        append_entry(
+            args.ledger,
+            kind="gate",
+            config={
+                "model": args.model,
+                "adapter": str(args.adapter),
+                "sae": payload["sae_weights"],
+            },
+            metrics={
+                "drift_score": payload["drift_score"],
+                "leakage_score": payload["leakage_score"],
+                "memorization_score": payload["memorization_score"],
+                "flagged": payload["flagged"],
+            },
+            artifacts={"gate": payload["artifact"]},
+        )
+        raise SystemExit(1 if payload["flagged"] else 0)
     if args.command == "rl":
         from .rl import run_rl
 

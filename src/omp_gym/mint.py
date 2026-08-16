@@ -34,6 +34,22 @@ _TEST_FAILED = re.compile(
 )
 
 
+def _has_selector(path: str) -> bool:
+    """True when the read path is not one plain file path.
+
+    A colon in the file name marks a line-range, raw, or archive
+    selector. A semicolon marks a multi-path read. Such a read is
+    partial or merged content. It must not become a workspace file.
+    """
+    return ":" in Path(path).name or ";" in path
+
+
+def _is_secret_path(path: str) -> bool:
+    """True when the path names an environment secrets file."""
+    name = Path(path).name
+    return name == ".env" or name.startswith(".env.") or name.endswith(".env")
+
+
 @dataclass(frozen=True)
 class MintedTask:
     """One task minted from a failed session."""
@@ -83,17 +99,23 @@ def _relative_write_path(path: str, cwd: Path | None) -> str:
 def _clean_read_payload(text: str) -> str | None:
     """Recover file content from a read tool payload.
 
-    Stored reads carry three wrappers, alone or combined: a CLI
-    header block (URL:, Content-Type: ...), line-number prefixes
-    ("159: ..."), and a trailing "[Showing lines ...]" marker.
-    Returns None when the payload is not file content (directory
-    listing, error page, empty result).
+    Stored reads carry wrappers, alone or combined: a snapshot
+    header ("[path#1A2B]"), a CLI header block (URL:,
+    Content-Type: ...), line-number prefixes ("159:..." or
+    "159: ..."), and a trailing "[Showing lines ...]" marker.
+    Returns None when the payload is not full file content
+    (directory listing, structural summary, error page, empty
+    result).
     """
     if not text.strip():
         return None
     if text.strip() == "(empty directory)":
         return None
     body = text
+    # Drop a snapshot header line ("[path#1A2B]").
+    first, newline, rest = body.partition("\n")
+    if re.fullmatch(r"\[[^\]]+#[0-9A-Fa-f]{4}\]", first.strip()) and newline:
+        body = rest
     # Drop a CLI header block if present (URL/Content-Type/Method).
     if "\n---\n" in body:
         head, _, rest = body.partition("\n---\n")
@@ -110,10 +132,25 @@ def _clean_read_payload(text: str) -> str | None:
     body = re.sub(
         r"\n?\[Read [^\]]+\]\s*$", "", body.rstrip()
     )
+    # A structural summary or a truncated read is partial content.
+    if re.search(r"^…|\[…\d+ln elided", body, re.MULTILINE):
+        return None
     lines = body.splitlines()
-    numbered = [line for line in lines if re.match(r"^\d+: ", line)]
+    # A directory listing is not file content.
+    if (
+        lines
+        and lines[0].strip() == "."
+        and any(line.startswith("  - ") for line in lines[1:])
+    ):
+        return None
+    numbered = [line for line in lines if re.match(r"^\d+:", line)]
     if lines and len(numbered) >= max(2, int(0.8 * len(lines))):
-        lines = [re.sub(r"^\d+: ?", "", line) for line in lines]
+        # "N:content" puts text right after the colon on at least
+        # one unindented line; "N: content" always pads the colon.
+        # One space of real indentation must survive the strip.
+        tight = any(re.match(r"^\d+:\S", line) for line in numbered)
+        prefix = r"^\d+:" if tight else r"^\d+: ?"
+        lines = [re.sub(prefix, "", line) for line in lines]
         body = "\n".join(lines)
     if not body.strip():
         return None
@@ -151,13 +188,23 @@ def _scan_session(session_file: Path) -> dict | None:
                 elif call.name == "write":
                     path = str(call.arguments.get("path", ""))
                     content = str(call.arguments.get("content", ""))
-                    if path and content and "://" not in path:
+                    if (
+                        path
+                        and content
+                        and "://" not in path
+                        and not _is_secret_path(path)
+                    ):
                         rel = _relative_write_path(path, cwd)
                         writes[rel] = content
                         latest[rel] = content
                 elif call.name == "read":
                     path = str(call.arguments.get("path", ""))
-                    if path and "://" not in path:
+                    if (
+                        path
+                        and "://" not in path
+                        and not _has_selector(path)
+                        and not _is_secret_path(path)
+                    ):
                         pending_reads[call.call_id] = (
                             _relative_write_path(path, cwd)
                         )

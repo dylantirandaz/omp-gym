@@ -98,11 +98,12 @@ def run_ab(
         )
     direction = weights["dec_w"][:, feature]
 
-    model, tokenizer = load(model_id)
-    if adapter_dir is not None:
-        model.load_weights(
-            str(adapter_dir / "adapters.safetensors"), strict=False
-        )
+    if adapter_dir is None:
+        model, tokenizer = load(model_id)
+    else:
+        if not (adapter_dir / "adapters.safetensors").is_file():
+            raise SteerError(f"no adapter weights at {adapter_dir}")
+        model, tokenizer = load(model_id, adapter_path=str(adapter_dir))
 
     unsteered_texts: list[str] = []
     steered_texts: list[str] = []

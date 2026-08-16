@@ -138,11 +138,12 @@ def train_sae(
 ) -> dict:
     """Train the SAE and write a feature report. Returns metrics."""
     gpu = require_metal_gpu()
-    model, tokenizer = load(model_id)
-    if adapter_dir is not None:
-        model.load_weights(
-            str(adapter_dir / "adapters.safetensors"), strict=False
-        )
+    if adapter_dir is None:
+        model, tokenizer = load(model_id)
+    else:
+        if not (adapter_dir / "adapters.safetensors").is_file():
+            raise SaeError(f"no adapter weights at {adapter_dir}")
+        model, tokenizer = load(model_id, adapter_path=str(adapter_dir))
     activations, excerpts = _collect_activations(
         model, tokenizer, data_dir
     )

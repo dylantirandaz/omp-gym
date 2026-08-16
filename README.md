@@ -99,9 +99,25 @@ directory.
 
 `ui [--port N]` — serve the dashboard. Read-only. Shows the
 models leaderboard, adapters, episodes, failure clusters, SAE
-features, a live logit lens (type a prompt, get the top predicted
-token after every decoder layer), and training curves for every
-adapter that has a recorded loss series.
+features, and training curves for every adapter that has a
+recorded loss series. Five panels are interactive:
+
+- Run monitor: every `train_report.json` with its loss curve,
+  plus a live view of `runs/live-train.log`. Mirror a remote
+  trainer log to that file to follow loss, tokens per second,
+  and peak memory while the job runs.
+- Bench matrix: the run x task grid from the ledger and from
+  fetched `*report*.jsonl` row files. Amber columns are the
+  sealed holdout tasks. Green cells pass, red cells fail.
+- Lens diff: type a prompt and an adapter directory; the panel
+  shows the base lens and the adapter lens side by side and
+  marks each layer where the top prediction diverges.
+- SAE explorer: per-token feature activations as a heat row,
+  the strongest features as chips, and a steer slider that
+  compares an unsteered and a steered completion live.
+- Replay: select an episode, scrub through it step by step,
+  watch full-file writes build up, and compare two episodes of
+  the same task side by side.
 
 `inspect --prompt "..." [--adapter DIR]` — logit-lens a local
 model: the top predicted tokens after every decoder layer. Writes

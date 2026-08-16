@@ -55,13 +55,12 @@ def run_lens(
 ) -> dict:
     """Compute the lens and write the artifact. Returns the result."""
     gpu = require_metal_gpu()
-    model, tokenizer = load(model_id)
-    if adapter_dir is not None:
+    if adapter_dir is None:
+        model, tokenizer = load(model_id)
+    else:
         if not (adapter_dir / "adapters.safetensors").is_file():
             raise InspectError(f"no adapter at {adapter_dir}")
-        model.load_weights(
-            str(adapter_dir / "adapters.safetensors"), strict=False
-        )
+        model, tokenizer = load(model_id, adapter_path=str(adapter_dir))
     ids = mx.array(tokenizer.encode(prompt))[None]
     per_layer = _layer_predictions(model, ids, top_k)
     n_layers = len(per_layer)
