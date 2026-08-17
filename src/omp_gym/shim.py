@@ -267,6 +267,16 @@ def _rewrite_request(body: dict, adapter_path: str | None = None) -> dict:
     sample_temp = os.environ.get("OMP_GYM_SAMPLE_TEMP")
     if sample_temp:
         upstream["temperature"] = float(sample_temp)
+    # Tuned models sometimes emit the chat end marker as literal
+    # text; the server then generates to the token cap. A stop
+    # string ends the turn at the first marker either way.
+    stops = upstream.get("stop")
+    stop_list = (
+        [stops] if isinstance(stops, str) else list(stops or [])
+    )
+    if "<|im_end|>" not in stop_list:
+        stop_list.append("<|im_end|>")
+    upstream["stop"] = stop_list
     if adapter_path is not None:
         upstream["adapters"] = adapter_path
     if isinstance(tools, list) and tools:
