@@ -60,10 +60,13 @@ class Trajectory:
 
     torn_lines counts lines that were not valid JSON. A live session
     file can end with one torn line while omp still writes to it.
+    source names the producer: "omp" for native sessions; importers
+    stamp "claude" or "codex" on the session header.
     """
 
     steps: tuple[Step, ...]
     torn_lines: int
+    source: str = "omp"
 
 
 def _block_texts(content: object) -> str:
@@ -99,9 +102,7 @@ def _parse_assistant(message: dict[str, object]) -> AssistantStep:
                     ToolCall(
                         call_id=str(block.get("id", "")),
                         name=str(block.get("name", "")),
-                        arguments=arguments
-                        if isinstance(arguments, dict)
-                        else {},
+                        arguments=arguments if isinstance(arguments, dict) else {},
                     )
                 )
     return AssistantStep(
@@ -112,16 +113,34 @@ def _parse_assistant(message: dict[str, object]) -> AssistantStep:
 
 
 def parse_session(session_file: Path) -> Trajectory:
-    """Read one session file and return its steps in order."""
+    """Read one session file and return its steps in order.
+
+    Bytes that are not valid UTF-8 count as torn lines, same as
+    lines that fail JSON parsing; neither raises.
+    """
     steps: list[Step] = []
     torn_lines = 0
-    for line in session_file.read_text().splitlines():
+    source = "omp"
+    for raw_line in session_file.read_bytes().splitlines():
+        try:
+            line = raw_line.decode("utf-8")
+        except UnicodeDecodeError:
+            torn_lines += 1
+            continue
         if not line.strip():
             continue
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
             torn_lines += 1
+            continue
+        if not isinstance(entry, dict):
+            torn_lines += 1
+            continue
+        if entry.get("type") == "session":
+            entry_source = entry.get("source")
+            if isinstance(entry_source, str) and entry_source:
+                source = entry_source
             continue
         if entry.get("type") != "message":
             continue
@@ -142,4 +161,4 @@ def parse_session(session_file: Path) -> Trajectory:
             )
         elif role == "user":
             steps.append(UserStep(text=_block_texts(message.get("content"))))
-    return Trajectory(steps=tuple(steps), torn_lines=torn_lines)
+    return Trajectory(steps=tuple(steps), torn_lines=torn_lines, source=source)

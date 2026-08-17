@@ -1,0 +1,12 @@
+prompt = """
+Implement topo_sort in graph.py so that test_graph.py passes. The
+module docstring states the exact rules: smallest-node tie-break for
+the order, and a precise recipe for which cycle the error value names
+(anchor at the smallest cyclic node, walk to the smallest successor
+that can still reach the anchor). Do not change the test file. Run
+`python3 test_graph.py` to confirm that all tests pass.
+"""
+test_command = ["python3", "test_graph.py"]
+context_files = ["graph.py", "test_graph.py"]
+tools = "read,write,bash"
+max_time = "300"

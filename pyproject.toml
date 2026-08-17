@@ -1,12 +1,13 @@
 [project]
 name = "omp-gym"
-version = "0.1.0"
+version = "0.3.0"
 description = "Training environment for coding models, built on the omp tool surface."
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "mlx-lm>=0.24; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "transformers>=4.44",
+    "mlx-lm>=0.24,<1.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "transformers>=4.44,<5",
+    "pyyaml>=6,<7",
 ]
 
 [project.scripts]
@@ -15,6 +16,7 @@ omp-gym = "omp_gym.cli:main"
 [dependency-groups]
 dev = [
     "ruff>=0.6",
+    "coverage>=7,<8",
 ]
 
 [build-system]
@@ -25,4 +27,12 @@ build-backend = "hatchling.build"
 packages = ["src/omp_gym"]
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+select = ["E4", "E7", "E9", "F", "I", "B", "S", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert on purpose; fuzzing uses seeded RNGs.
+"tests/**" = ["S101", "S311"]
+# Subprocess invocations are the runner/shim/isolation core.
+"src/omp_gym/shim.py" = ["S404", "S602", "S603", "S607"]
+"src/omp_gym/runner.py" = ["S404", "S602", "S603", "S607"]
+"src/omp_gym/isolation.py" = ["S404", "S602", "S603", "S607"]

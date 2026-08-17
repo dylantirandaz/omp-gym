@@ -56,21 +56,17 @@ class LoadTaskTests(unittest.TestCase):
             )
             loaded = load_task(task_dir)
         self.assertIsInstance(loaded, TaskLoadError)
-        self.assertIn(
-            "node, pytest, python, python3", loaded.reason
-        )
+        self.assertIn("node, pytest, python, python3", loaded.reason)
 
 
 class LoadTaskSuiteTests(unittest.TestCase):
-    def test_finds_tasks_in_nested_pools(self) -> None:
+    def test_default_suite_uses_only_immediate_children(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             write_task(root / "top-task")
-            write_task(root / "minted" / "pool-task")
+            write_task(root / "nested" / "pool-task")
             suite = load_task_suite(root)
-        self.assertEqual(
-            [task.name for task in suite], ["pool-task", "top-task"]
-        )
+        self.assertEqual([task.name for task in suite], ["top-task"])
 
 
 if __name__ == "__main__":

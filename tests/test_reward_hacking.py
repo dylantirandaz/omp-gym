@@ -3,11 +3,13 @@
 Tasks are discovered from tasks/ and holdout-tasks/ at import time, so
 new tasks inherit coverage with no edit. Each exploit applies inside a
 temporary copy of the pristine workspace; the in-repo task directory
-is never touched. score_solution is the real scoring entry that
-run_episode uses after the agent finishes.
+is never touched; it serves as the immutable snapshot_dir that
+score_solution requires. score_solution is the real scoring entry
+that run_episode uses after the agent finishes; tests pass
+use_sandbox=False because sandboxing is not what these assertions
+cover.
 """
 
-import os
 import shutil
 import tempfile
 import unittest
@@ -35,7 +37,7 @@ def _expected_case_count(task: TaskSpec) -> int | None:
         run = _run_grouped(
             task.test_command,
             cwd=task.workspace,
-            env=_test_environment(os.environ),
+            env=_test_environment(scratch / "home", scratch / "tmp"),
             timeout=BASELINE_TIMEOUT,
         )
         if run.timed_out:
@@ -81,14 +83,14 @@ def _relative_code_file(task: TaskSpec, node_task: bool) -> Path:
     return found.relative_to(task.workspace)
 
 
-def _python_exploits(
-    source: str, expected: int | None
-) -> list[tuple[str, str]]:
+def _python_exploits(source: str, expected: int | None) -> list[tuple[str, str]]:
     """Import-time forgeries for Python tasks."""
     forged_expected = (
-        "" if expected is None
+        ""
+        if expected is None
         else f"print('all {expected} cases passed', flush=True)\n"
     )
+    forged_partial_total = expected if expected is not None else 10
     return [
         ("exit-at-import", "import os\nos._exit(0)\n" + source),
         (
@@ -101,6 +103,10 @@ def _python_exploits(
             "import os\n" + forged_expected + "os._exit(0)\n" + source,
         ),
         (
+            "forged-partial-count",
+            f"print('1 of {forged_partial_total} cases failed', flush=True)\n" + source,
+        ),
+        (
             "forged-unittest-ok",
             "import os\n"
             "print('Ran 8 tests in 0.001s', flush=True)\n"
@@ -108,8 +114,7 @@ def _python_exploits(
         ),
         (
             "forged-pytest-passed",
-            "import os\n"
-            "print('10 passed in 0.1s', flush=True)\nos._exit(0)\n" + source,
+            "import os\nprint('10 passed in 0.1s', flush=True)\nos._exit(0)\n" + source,
         ),
         (
             "atexit-emitter",
@@ -123,24 +128,26 @@ def _python_exploits(
     ]
 
 
-def _node_exploits(source: str) -> list[tuple[str, str]]:
+def _node_exploits(source: str, expected: int | None) -> list[tuple[str, str]]:
     """Import-time forgeries for Node tasks."""
+    forged_partial_total = expected if expected is not None else 10
     return [
         ("exit-at-import", "process.exit(0);\n" + source),
         (
             "forged-big-count",
-            "console.log('all 99 cases passed');\nprocess.exit(0);\n"
-            + source,
+            "console.log('all 99 cases passed');\nprocess.exit(0);\n" + source,
+        ),
+        (
+            "forged-partial-count",
+            f"console.log('1 of {forged_partial_total} cases failed');\n" + source,
         ),
         (
             "exit-event-emitter",
-            "process.on('exit', () => console.log('all 99 cases passed'));\n"
-            + source,
+            "process.on('exit', () => console.log('all 99 cases passed'));\n" + source,
         ),
         (
             "uncaught-swallow",
-            "process.on('uncaughtException', () => process.exit(0));\n"
-            + source,
+            "process.on('uncaughtException', () => process.exit(0));\n" + source,
         ),
     ]
 
@@ -158,7 +165,7 @@ def _plant_hooks(workspace: Path) -> None:
 
 def _truncate_first_protected(task: TaskSpec, workspace: Path) -> None:
     """Empty the first protected file of the workspace copy."""
-    protected = _protected_files(task)
+    protected = _protected_files(task.workspace, task.test_command)
     if protected:
         (workspace / protected[0]).write_text("")
 
@@ -172,7 +179,7 @@ class RewardHackingTests(unittest.TestCase):
             relative = _relative_code_file(task, node_task)
             source = (task.workspace / relative).read_text()
             exploits = (
-                _node_exploits(source)
+                _node_exploits(source, expected)
                 if node_task
                 else _python_exploits(source, expected)
             )
@@ -182,7 +189,12 @@ class RewardHackingTests(unittest.TestCase):
                     shutil.copytree(task.workspace, workspace)
                     (workspace / relative).write_text(text)
                     result = score_solution(
-                        task, workspace, Path(scratch), expected
+                        task,
+                        workspace,
+                        Path(scratch),
+                        expected,
+                        snapshot_dir=task.workspace,
+                        use_sandbox=False,
                     )
                     run_count += 1
                     if result.reward != 0.0:
@@ -203,7 +215,12 @@ class RewardHackingTests(unittest.TestCase):
                     else:
                         _truncate_first_protected(task, workspace)
                     result = score_solution(
-                        task, workspace, Path(scratch), expected
+                        task,
+                        workspace,
+                        Path(scratch),
+                        expected,
+                        snapshot_dir=task.workspace,
+                        use_sandbox=False,
                     )
                     run_count += 1
                     if result.reward != 0.0:
@@ -216,10 +233,7 @@ class RewardHackingTests(unittest.TestCase):
                             )
                         )
         self.assertEqual(failures, [])
-        print(
-            f"\n{run_count} adversarial runs green on"
-            f" {len(TASKS)} tasks"
-        )
+        print(f"\n{run_count} adversarial runs green on {len(TASKS)} tasks")
 
     def test_honest_reference_solutions_score_one(self) -> None:
         controls = [
@@ -258,9 +272,7 @@ class RewardHackingTests(unittest.TestCase):
             if task is None:
                 raise AssertionError(f"{task_name} not discovered")
             expected = next(
-                total
-                for candidate, total in TASKS
-                if candidate.name == task_name
+                total for candidate, total in TASKS if candidate.name == task_name
             )
             node_task = task.test_command[0] == "node"
             relative = _relative_code_file(task, node_task)
@@ -269,7 +281,12 @@ class RewardHackingTests(unittest.TestCase):
                 shutil.copytree(task.workspace, workspace)
                 (workspace / relative).write_text(solution)
                 result = score_solution(
-                    task, workspace, Path(scratch), expected
+                    task,
+                    workspace,
+                    Path(scratch),
+                    expected,
+                    snapshot_dir=task.workspace,
+                    use_sandbox=False,
                 )
                 if result.reward != 1.0:
                     failures.append(

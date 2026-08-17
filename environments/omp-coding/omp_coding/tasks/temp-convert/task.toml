@@ -1,0 +1,11 @@
+prompt = """
+Implement the function convert in temperature.py so that
+test_temperature.py passes. The function converts between Fahrenheit
+and Celsius. Bad input returns a ConvertError value. Do not change the
+test file. Run `python3 test_temperature.py` to confirm that all tests
+pass.
+"""
+test_command = ["python3", "test_temperature.py"]
+context_files = ["temperature.py", "test_temperature.py"]
+tools = "read,write,bash"
+max_time = "300"

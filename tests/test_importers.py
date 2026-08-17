@@ -1,10 +1,11 @@
 """Tests for the session importers.
 
-The tests cover three contracts: a failed Codex command produces a
+The tests cover four contracts: a failed Codex command produces a
 tool result with isError true, a discoverable working directory
-produces a session header line, and the import stats count results
-without an error signal and sessions without a cwd. The fixtures
-copy the payload shapes found in real local rollout files.
+lands in the session header line, every imported session is tagged
+with its source agent in that header, and the import stats count
+results without an error signal and sessions without a cwd. The
+fixtures copy the payload shapes found in real local rollout files.
 """
 
 import json
@@ -26,7 +27,7 @@ _FAIL_OUTPUT = (
     "Original token count: 13\n"
     "Output:\ncurl: (6) Could not resolve host: example.invalid\r\n"
 )
-_PASS_OUTPUT = (
+_OK_OUTPUT = (
     "Chunk ID: d7a0f3\n"
     "Wall time: 0.0452 seconds\n"
     "Process exited with code 0\n"
@@ -108,7 +109,7 @@ class ConvertCodexTest(unittest.TestCase):
                     _codex_call("c1", "curl https://example.invalid"),
                     _codex_output("c1", _FAIL_OUTPUT),
                     _codex_call("c2", "echo tip"),
-                    _codex_output("c2", _PASS_OUTPUT),
+                    _codex_output("c2", _OK_OUTPUT),
                 ],
             )
             converted = _convert_codex(rollout)
@@ -117,9 +118,7 @@ class ConvertCodexTest(unittest.TestCase):
         self.assertEqual(converted.results_without_error_signal, 0)
 
     def test_missing_signal_stays_false_and_is_counted(self) -> None:
-        no_signal_list = [
-            {"type": "input_text", "text": "Internal Error ()"}
-        ]
+        no_signal_list = [{"type": "input_text", "text": "Internal Error ()"}]
         with tempfile.TemporaryDirectory() as tmp:
             rollout = Path(tmp) / "rollout.jsonl"
             _write_rollout(
@@ -142,9 +141,8 @@ class ConvertCodexTest(unittest.TestCase):
 
     def test_json_output_signals(self) -> None:
         timed_out = json.dumps({"message": "Wait timed out.", "timed_out": True})
-        wrapped = (
-            "Wall time: 2.3812 seconds\n"
-            "Output:\n" + json.dumps({"exit_code": 1, "output": "boom"})
+        wrapped = "Wall time: 2.3812 seconds\nOutput:\n" + json.dumps(
+            {"exit_code": 1, "output": "boom"}
         )
         with tempfile.TemporaryDirectory() as tmp:
             rollout = Path(tmp) / "rollout.jsonl"
@@ -170,7 +168,7 @@ class ConvertCodexTest(unittest.TestCase):
                 [
                     _codex_meta("/work/project"),
                     _codex_call("c1", "true"),
-                    _codex_output("c1", _PASS_OUTPUT),
+                    _codex_output("c1", _OK_OUTPUT),
                 ],
             )
             converted = _convert_codex(rollout)
@@ -252,13 +250,58 @@ class ImportSessionsTest(unittest.TestCase):
             with_cwd = (out_dir / "codex" / "a-with-cwd.jsonl").read_text()
             header = json.loads(with_cwd.splitlines()[0])
             self.assertEqual(
-                header, {"type": "session", "cwd": "/work/project"}
+                header,
+                {
+                    "type": "session",
+                    "source": "codex",
+                    "cwd": "/work/project",
+                },
             )
-            without_cwd = (
-                out_dir / "codex" / "b-without-cwd.jsonl"
-            ).read_text()
+            without_cwd = (out_dir / "codex" / "b-without-cwd.jsonl").read_text()
             first = json.loads(without_cwd.splitlines()[0])
-            self.assertEqual(first["type"], "message")
+            self.assertEqual(first, {"type": "session", "source": "codex"})
+
+    def test_every_imported_session_is_tagged_with_its_source(self) -> None:
+        claude_lines = [
+            json.dumps(
+                {
+                    "type": "user",
+                    "cwd": "/work/claude",
+                    "message": {
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Run it."}],
+                    },
+                }
+            )
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            claude_store = home / ".claude" / "projects" / "proj"
+            claude_store.mkdir(parents=True)
+            _write_rollout(claude_store / "s1.jsonl", claude_lines)
+            codex_store = home / ".codex" / "sessions"
+            codex_store.mkdir(parents=True)
+            _write_rollout(
+                codex_store / "s2.jsonl",
+                [_codex_call("c1", "true"), _codex_output("c1", _OK_OUTPUT)],
+            )
+            out_dir = Path(tmp) / "out"
+            with mock.patch.object(Path, "home", return_value=home):
+                claude_stats = import_sessions("claude", out_dir)
+                codex_stats = import_sessions("codex", out_dir)
+
+            self.assertEqual(claude_stats.files_written, 1)
+            self.assertEqual(codex_stats.files_written, 1)
+            claude_header = json.loads(
+                (out_dir / "claude" / "s1.jsonl").read_text().splitlines()[0]
+            )
+            self.assertEqual(claude_header["source"], "claude")
+            self.assertEqual(claude_header["cwd"], "/work/claude")
+            codex_header = json.loads(
+                (out_dir / "codex" / "s2.jsonl").read_text().splitlines()[0]
+            )
+            self.assertEqual(codex_header["source"], "codex")
+            self.assertNotIn("cwd", codex_header)
 
 
 if __name__ == "__main__":

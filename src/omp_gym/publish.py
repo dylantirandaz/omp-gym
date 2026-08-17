@@ -1,9 +1,9 @@
 """Publish the ledger report as a static page.
 
 Writes docs/index.html (a rendered report page). With --push it
-commits and pushes only that file. It never changes repository
-settings: enabling GitHub Pages stays a manual decision, because a
-one-command publish pipeline can amplify a data leak.
+commits only that file, then pushes local main to origin. It never
+changes repository settings. Enabling GitHub Pages stays a manual
+decision, because one command can amplify a data leak.
 """
 
 import html
@@ -18,13 +18,15 @@ def _git_binary() -> str:
     """Find a working git. Prefer PATH, then the macOS CLT copy."""
     candidate = shutil.which("git")
     if candidate:
-        probe = subprocess.run(
+        probe = subprocess.run(  # noqa: S603 - resolved executable
             [candidate, "--version"], capture_output=True
         )
         if probe.returncode == 0:
             return candidate
     clt = "/Library/Developer/CommandLineTools/usr/bin/git"
-    probe = subprocess.run([clt, "--version"], capture_output=True)
+    probe = subprocess.run(  # noqa: S603 - fixed executable
+        [clt, "--version"], capture_output=True
+    )
     if probe.returncode == 0:
         return clt
     raise RuntimeError("no working git binary found")
@@ -62,9 +64,7 @@ def _markdown_to_html(markdown: str) -> str:
                 in_table = True
             lines_out.append(
                 "<tr>"
-                + "".join(
-                    f"<{tag}>{html.escape(c)}</{tag}>" for c in cells
-                )
+                + "".join(f"<{tag}>{html.escape(c)}</{tag}>" for c in cells)
                 + "</tr>"
             )
             continue
@@ -84,10 +84,8 @@ def _markdown_to_html(markdown: str) -> str:
     return "\n".join(lines_out)
 
 
-def publish_report(
-    repo_root: Path, ledger_path: Path, push: bool
-) -> dict:
-    """Render docs/index.html and push only that file on request."""
+def publish_report(repo_root: Path, ledger_path: Path, push: bool) -> dict:
+    """Render docs/index.html and optionally commit it and push main."""
     report = report_from_ledger(ledger_path)
     docs = repo_root / "docs"
     docs.mkdir(exist_ok=True)
@@ -101,7 +99,7 @@ def publish_report(
     git_bin = _git_binary()
 
     def git(*args: str) -> None:
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - resolved executable
             [git_bin, *args],
             cwd=repo_root,
             check=True,
@@ -109,8 +107,16 @@ def publish_report(
         )
 
     git("add", "docs/index.html")
-    commit = subprocess.run(
-        [git_bin, "commit", "-m", "Publish ledger report page"],
+    commit = subprocess.run(  # noqa: S603 - resolved executable
+        [
+            git_bin,
+            "commit",
+            "--only",
+            "-m",
+            "Publish ledger report page",
+            "--",
+            "docs/index.html",
+        ],
         cwd=repo_root,
         capture_output=True,
         text=True,

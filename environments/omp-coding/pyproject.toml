@@ -1,11 +1,15 @@
 [project]
 name = "omp-coding"
-version = "0.1.0"
+version = "0.3.0"
 description = "Agentic coding tasks driven through the omp harness: real tool-use episodes scored by tests."
+requires-python = ">=3.11,<3.14"
+readme = "README.md"
+license = "MIT"
 tags = ["coding", "agent", "tools", "omp"]
 dependencies = [
-    "verifiers",
-    "omp-gym @ git+https://github.com/dylantirandaz/omp-gym.git",
+    "datasets>=3.3,<6",
+    "verifiers @ git+https://github.com/PrimeIntellect-ai/verifiers.git@0a4d872f021022310a08ec213a25f4efb4a0244a",
+    "omp-gym @ git+https://github.com/dylantirandaz/omp-gym.git@main",
 ]
 
 [build-system]
@@ -15,5 +19,12 @@ build-backend = "hatchling.build"
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.hatch.build]
+include = ["omp_coding/**", "README.md", "pyproject.toml"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["omp_coding"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"README.md" = "README.md"
+"pyproject.toml" = "pyproject.toml"

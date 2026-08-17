@@ -14,6 +14,12 @@ markers and one threshold tuned on a small set of measured runs.
 It is not a general memorization test: an adapter that leaks
 training data without these exact markers passes the leak check,
 and drift only sees the one probed layer.
+
+The gate also reads the adapter's own train_report.json when one
+exists and replays the training-time memorization-shaped curve
+check (memorization_shaped_run) on it. The curve verdict is
+recorded in the artifact next to the thresholds used; the flag
+itself stays a drift-plus-leakage decision.
 """
 
 from __future__ import annotations
@@ -77,13 +83,11 @@ LEAK_MARKERS = (
 NEUTRAL_PROMPTS = (
     (
         "neutral-reverse",
-        "Write a Python function that reverses a string. "
-        "Add a short docstring.",
+        "Write a Python function that reverses a string. Add a short docstring.",
     ),
     (
         "neutral-search",
-        "Explain how binary search works on a sorted list. "
-        "Keep the answer short.",
+        "Explain how binary search works on a sorted list. Keep the answer short.",
     ),
     (
         "neutral-fib",
@@ -98,6 +102,38 @@ class GateError(SystemExit):
 
     def __init__(self, reason: str) -> None:
         super().__init__(f"gate failed: {reason}")
+
+
+def memorization_shaped_run(
+    losses: list[float],
+    val_losses: list[float],
+    *,
+    train_drop_pct: float = 0.15,
+    val_drop_ratio: float = 0.25,
+) -> str | None:
+    """A reason when the loss curves show memorization, else None.
+
+    A memorization-shaped run drops the train loss by more than
+    train_drop_pct while the val loss drops by less than
+    val_drop_ratio of the train drop. Such a run learned the train
+    set, not the task. This is the single home of the check:
+    train.py gates the training run on it, run_gate replays it on
+    the adapter's train report.
+    """
+    if not losses or not val_losses:
+        return None
+    if losses[0] <= 0 or val_losses[0] <= 0:
+        return None
+    train_drop = (losses[0] - losses[-1]) / losses[0]
+    val_drop = (val_losses[0] - val_losses[-1]) / val_losses[0]
+    if train_drop > train_drop_pct and val_drop < train_drop * val_drop_ratio:
+        return (
+            "memorization-shaped run: train loss dropped "
+            f"{train_drop:.1%} but val loss dropped only "
+            f"{val_drop:.1%}; the adapter learned the train "
+            "set, not the task"
+        )
+    return None
 
 
 @dataclass(frozen=True)
@@ -117,9 +153,7 @@ def _task_probes(root: Path, source: str) -> list[Probe]:
         task = load_task(config_path.parent)
         if isinstance(task, TaskLoadError):
             raise GateError(f"bad task {task.path}: {task.reason}")
-        probes.append(
-            Probe(task.name, source, task.prompt, task.test_command[0])
-        )
+        probes.append(Probe(task.name, source, task.prompt, task.test_command[0]))
     if not probes:
         raise GateError(f"no tasks found under {root}")
     return probes
@@ -130,8 +164,7 @@ def _collect_probes(holdout_dir: Path, tasks_dir: Path) -> list[Probe]:
     probes = _task_probes(holdout_dir, "holdout")
     probes.extend(_task_probes(tasks_dir, "training"))
     probes.extend(
-        Probe(name, "neutral", prompt, "python3")
-        for name, prompt in NEUTRAL_PROMPTS
+        Probe(name, "neutral", prompt, "python3") for name, prompt in NEUTRAL_PROMPTS
     )
     return probes
 
@@ -142,6 +175,8 @@ def _find_compatible_sae(out_dir: Path, model_id: str) -> Path | None:
         try:
             meta = json.loads(artifact.read_text())
         except json.JSONDecodeError:
+            continue
+        if not isinstance(meta, dict):
             continue
         weights = meta.get("weights")
         if meta.get("model") != model_id or not isinstance(weights, str):
@@ -169,9 +204,7 @@ def _ensure_sae(
     if found is not None:
         return found, f"reused, trained earlier for {model_id}: {found}"
     if not (data_dir / "train.jsonl").is_file():
-        raise GateError(
-            f"no compatible SAE and no {data_dir}/train.jsonl to train one"
-        )
+        raise GateError(f"no compatible SAE and no {data_dir}/train.jsonl to train one")
     print(f"no compatible SAE for {model_id}; training a fresh one")
     metrics = train_sae(data_dir, model_id, None, out_dir)
     gc.collect()
@@ -179,6 +212,51 @@ def _ensure_sae(
     return (
         Path(metrics["weights"]),
         f"trained fresh for {model_id} in this run: {metrics['weights']}",
+    )
+
+
+def _train_curve_verdict(
+    adapter_dir: Path | None,
+    *,
+    train_drop_pct: float,
+    val_drop_ratio: float,
+) -> str | None:
+    """Replay the curve check on the adapter's own train report.
+
+    An adapter directory written by a completed training run holds
+    train_report.json with the first and last train/val losses.
+    When the file is absent or unreadable the verdict is None: no
+    evidence, not a pass.
+    """
+    if adapter_dir is None:
+        return None
+    report_path = adapter_dir / "train_report.json"
+    if not report_path.is_file():
+        return None
+    try:
+        report = json.loads(report_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(report, dict):
+        return None
+    first_train = report.get("first_train_loss")
+    last_train = report.get("last_train_loss")
+    if not isinstance(first_train, (int, float)) or not isinstance(
+        last_train, (int, float)
+    ):
+        return None
+    first_val = report.get("first_val_loss")
+    last_val = report.get("last_val_loss")
+    val_losses = (
+        [float(first_val), float(last_val)]
+        if isinstance(first_val, (int, float)) and isinstance(last_val, (int, float))
+        else []
+    )
+    return memorization_shaped_run(
+        [float(first_train), float(last_train)],
+        val_losses,
+        train_drop_pct=train_drop_pct,
+        val_drop_ratio=val_drop_ratio,
     )
 
 
@@ -257,9 +335,7 @@ def _generate_text(model, tokenizer, prompt: str) -> str:
     )
 
 
-def _leakage_records(
-    model, tokenizer, probes: list[Probe]
-) -> list[dict]:
+def _leakage_records(model, tokenizer, probes: list[Probe]) -> list[dict]:
     """Generate completions and score marker leakage.
 
     The training tasks are Python tasks. The probe prefers Python
@@ -295,18 +371,17 @@ def run_gate(
     holdout_dir: Path,
     tasks_dir: Path,
     data_dir: Path,
+    *,
+    train_drop_pct: float = 0.15,
+    val_drop_ratio: float = 0.25,
 ) -> dict:
     """Run both checks, write the artifact, return the verdict."""
     gpu = require_metal_gpu()
-    if adapter_dir is not None and not (
-        adapter_dir / "adapters.safetensors"
-    ).is_file():
+    if adapter_dir is not None and not (adapter_dir / "adapters.safetensors").is_file():
         raise GateError(f"no adapter at {adapter_dir}")
     probes = _collect_probes(holdout_dir, tasks_dir)
 
-    sae_path, provenance = _ensure_sae(
-        out_dir, model_id, sae_weights, data_dir
-    )
+    sae_path, provenance = _ensure_sae(out_dir, model_id, sae_weights, data_dir)
     weights = mx.load(str(sae_path))
     if "enc_w" not in weights or "enc_b" not in weights:
         raise GateError(f"{sae_path} has no encoder weights")
@@ -316,37 +391,29 @@ def run_gate(
     model, tokenizer = load(model_id)
     # Quantized embeddings pack their weight, so measure the
     # embedding output width instead of the stored shape.
-    hidden_dim = int(
-        model.model.embed_tokens(mx.array([[0]])).shape[-1]
-    )
+    hidden_dim = int(model.model.embed_tokens(mx.array([[0]])).shape[-1])
     if enc_w.shape[1] != hidden_dim:
         raise GateError(
             f"SAE expects dim {enc_w.shape[1]}, model has {hidden_dim}; "
             "train an SAE for this base model"
         )
-    base_profiles = _capture_profiles(
-        model, tokenizer, enc_w, enc_b, probes
-    )
+    base_profiles = _capture_profiles(model, tokenizer, enc_w, enc_b, probes)
 
     if adapter_dir is None:
         # Control mode: a second base pass stands in for the adapter.
-        adapted_profiles = _capture_profiles(
-            model, tokenizer, enc_w, enc_b, probes
-        )
+        adapted_profiles = _capture_profiles(model, tokenizer, enc_w, enc_b, probes)
         generations = _leakage_records(model, tokenizer, probes)
     else:
         del model
         gc.collect()
         mx.clear_cache()
         model, tokenizer = load(model_id, adapter_path=str(adapter_dir))
-        adapted_profiles = _capture_profiles(
-            model, tokenizer, enc_w, enc_b, probes
-        )
+        adapted_profiles = _capture_profiles(model, tokenizer, enc_w, enc_b, probes)
         generations = _leakage_records(model, tokenizer, probes)
 
     probe_rows = []
     for probe, base_p, adapted_p in zip(
-        probes, base_profiles, adapted_profiles
+        probes, base_profiles, adapted_profiles, strict=True
     ):
         overlap, shift = _probe_metrics(base_p, adapted_p)
         probe_rows.append(
@@ -360,13 +427,16 @@ def run_gate(
         )
 
     drift_score = sum(row["drift"] for row in probe_rows) / len(probe_rows)
-    leakage_score = sum(
-        record["leak_score"] for record in generations
-    ) / len(generations)
-    memorization = (
-        DRIFT_WEIGHT * drift_score + LEAK_WEIGHT * leakage_score
+    leakage_score = sum(record["leak_score"] for record in generations) / len(
+        generations
     )
+    memorization = DRIFT_WEIGHT * drift_score + LEAK_WEIGHT * leakage_score
     flagged = memorization >= MEMORIZATION_THRESHOLD
+    curve_verdict = _train_curve_verdict(
+        adapter_dir,
+        train_drop_pct=train_drop_pct,
+        val_drop_ratio=val_drop_ratio,
+    )
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -390,6 +460,9 @@ def run_gate(
         "memorization_score": round(memorization, 4),
         "threshold": MEMORIZATION_THRESHOLD,
         "flagged": flagged,
+        "train_drop_pct": train_drop_pct,
+        "val_drop_ratio": val_drop_ratio,
+        "train_curve_memorization": curve_verdict,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "artifact": str(artifact),
     }

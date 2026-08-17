@@ -15,12 +15,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .ledger import read_ledger
 from .config import DEFAULT_MODEL, default_model
+from .ledger import read_ledger
+from .page import DASHBOARD_PAGE
 from .report import _model_stats
 from .trajectory import AssistantStep, ToolResultStep, UserStep, parse_session
-
-from .page import DASHBOARD_PAGE
 
 _LENS_CACHE: dict[str, object] = {}
 _SAE_CACHE: dict[str, object] = {}
@@ -47,9 +46,8 @@ def _model_allowed(model_id: str) -> bool:
     if model_id in (default_model(), DEFAULT_MODEL):
         return True
     candidate = Path(model_id)
-    return (
-        candidate.is_dir()
-        and candidate.resolve().is_relative_to(Path.cwd().resolve())
+    return candidate.is_dir() and candidate.resolve().is_relative_to(
+        Path.cwd().resolve()
     )
 
 
@@ -77,9 +75,7 @@ def _load_model(model_id: str, adapter_dir: Path | None):
             weights = adapter_dir / "adapters.safetensors"
             if not weights.is_file():
                 raise FileNotFoundError(f"no adapter weights at {weights}")
-            _LENS_CACHE[cache_key] = mlx_load(
-                model_id, adapter_path=str(adapter_dir)
-            )
+            _LENS_CACHE[cache_key] = mlx_load(model_id, adapter_path=str(adapter_dir))
         while len(_LENS_CACHE) > _MODEL_CACHE_LIMIT:
             _LENS_CACHE.pop(next(iter(_LENS_CACHE)))
     return _LENS_CACHE[cache_key]
@@ -99,9 +95,7 @@ def _live_lens(
     top_by_layer = []
     for top in per_layer:
         token_ids = top[0, -1, :].tolist()
-        top_by_layer.append(
-            [tokenizer.decode([int(t)]) for t in reversed(token_ids)]
-        )
+        top_by_layer.append([tokenizer.decode([int(t)]) for t in reversed(token_ids)])
     return {
         "prompt": prompt,
         "model": model_id,
@@ -111,16 +105,14 @@ def _live_lens(
     }
 
 
-def _lens_diff(
-    prompt: str, model_id: str, adapter_dir: Path, top_k: int
-) -> dict:
+def _lens_diff(prompt: str, model_id: str, adapter_dir: Path, top_k: int) -> dict:
     """Show the base lens and the adapter lens side by side."""
     base = _live_lens(prompt, model_id, None, top_k)
     tuned = _live_lens(prompt, model_id, adapter_dir, top_k)
     diverges = [
         base_tokens[0] != tuned_tokens[0]
         for base_tokens, tuned_tokens in zip(
-            base["top_by_layer"], tuned["top_by_layer"]
+            base["top_by_layer"], tuned["top_by_layer"], strict=True
         )
     ]
     return {
@@ -155,6 +147,8 @@ def _train_reports(runs_dir: Path) -> list[dict[str, object]]:
         try:
             payload = json.loads(report_path.read_text())
         except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
             continue
         payload["report_path"] = str(report_path)
         payload["modified"] = report_path.stat().st_mtime
@@ -197,11 +191,7 @@ def _holdout_names() -> set[str]:
     root = Path("holdout-tasks")
     if not root.is_dir():
         return set()
-    return {
-        entry.name
-        for entry in root.iterdir()
-        if (entry / "task.toml").is_file()
-    }
+    return {entry.name for entry in root.iterdir() if (entry / "task.toml").is_file()}
 
 
 def _merge_cell(
@@ -247,9 +237,7 @@ def _ledger_matrix_rows(ledger_path: Path) -> list[dict[str, object]]:
                 row.get("error"),
             )
         for label, cells in grouped.items():
-            rows.append(
-                {"label": label, "when": entry.timestamp, "cells": cells}
-            )
+            rows.append({"label": label, "when": entry.timestamp, "cells": cells})
     return rows
 
 
@@ -286,9 +274,7 @@ def _file_matrix_rows() -> list[dict[str, object]]:
         if not cells_by_model:
             continue
         source = (
-            rows_path.stem.replace("-report", "")
-            .replace("report", "")
-            .strip("-")
+            rows_path.stem.replace("-report", "").replace("report", "").strip("-")
         ) or rows_path.parent.name
         when = time.strftime(
             "%Y-%m-%dT%H:%M", time.localtime(rows_path.stat().st_mtime)
@@ -307,7 +293,8 @@ def _bench_matrix(ledger_path: Path) -> dict[str, object]:
     tasks: set[str] = set()
     for row in rows:
         cells = row["cells"]
-        assert isinstance(cells, dict)
+        if not isinstance(cells, dict):
+            raise TypeError("bench matrix cells must be a dictionary")
         tasks.update(cells.keys())
     train_tasks = sorted(tasks - holdout)
     holdout_tasks = sorted(tasks & holdout)
@@ -357,9 +344,7 @@ def _sae_tokens(prompt: str) -> dict:
     if not ids:
         return {"error": "empty prompt"}
     weights = _sae_weights(str(meta["weights"]))
-    hidden = _captured_forward(
-        model, mx.array(ids)[None], int(meta["layer"])
-    )
+    hidden = _captured_forward(model, mx.array(ids)[None], int(meta["layer"]))
     z = mx.maximum(hidden @ weights["enc_w"].T + weights["enc_b"], 0)
     mx.eval(z)
     top_ids = mx.argsort(-z, axis=1)[:, :3].tolist()
@@ -373,9 +358,7 @@ def _sae_tokens(prompt: str) -> dict:
             for feature_id in top_ids[position]
             if float(z[position, feature_id]) > 0
         ]
-        tokens.append(
-            {"text": tokenizer.decode([token_id]), "features": features}
-        )
+        tokens.append({"text": tokenizer.decode([token_id]), "features": features})
     peak = z.max(axis=0)
     mx.eval(peak)
     order = mx.argsort(-peak)[:8].tolist()
@@ -424,9 +407,7 @@ def _sae_steer(prompt: str, feature: int, alpha: float) -> dict:
 def _episode_index(runs_dir: Path) -> list[dict[str, object]]:
     """List all recorded episodes, newest first."""
     episodes = []
-    for episode_file in sorted(
-        runs_dir.glob("*/episode.json"), reverse=True
-    ):
+    for episode_file in sorted(runs_dir.glob("*/episode.json"), reverse=True):
         record = json.loads(episode_file.read_text())
         episodes.append(
             {
@@ -476,18 +457,14 @@ def _transcript(runs_dir: Path, episode: str) -> list[dict[str, object]]:
     return steps
 
 
-def _episode_record(
-    runs_dir: Path, episode: str
-) -> dict[str, object] | None:
+def _episode_record(runs_dir: Path, episode: str) -> dict[str, object] | None:
     """The episode record plus the tail of its test output."""
     record_path = runs_dir / episode / "episode.json"
     if not record_path.is_file():
         return None
     record = json.loads(record_path.read_text())
     test_log = runs_dir / episode / "test_output.log"
-    record["test_output"] = (
-        test_log.read_text()[-2000:] if test_log.is_file() else ""
-    )
+    record["test_output"] = test_log.read_text()[-2000:] if test_log.is_file() else ""
     return record
 
 
@@ -530,9 +507,7 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                 self._send_html(DASHBOARD_PAGE)
             elif parsed.path == "/api/summary":
                 entries, torn = read_ledger(ledger_path)
-                train_entries = [
-                    entry for entry in entries if entry.kind == "train"
-                ]
+                train_entries = [entry for entry in entries if entry.kind == "train"]
                 self._send_json(
                     {
                         "adapters": [
@@ -545,10 +520,7 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                             }
                             for entry in train_entries
                         ],
-                        "models": [
-                            asdict(stat)
-                            for stat in _model_stats(entries)
-                        ],
+                        "models": [asdict(stat) for stat in _model_stats(entries)],
                         "entries": len(entries),
                         "torn": torn,
                     }
@@ -569,9 +541,7 @@ def make_handler(ledger_path: Path, runs_dir: Path):
             elif parsed.path == "/api/monitor":
                 self._send_json(
                     {
-                        "live": _live_training(
-                            runs_dir / "live-train.log"
-                        ),
+                        "live": _live_training(runs_dir / "live-train.log"),
                         "reports": _train_reports(runs_dir),
                     }
                 )
@@ -585,14 +555,10 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                 model_id = query.get("model", [None])[0] or default_model()
                 adapter_raw = query.get("adapter", [None])[0]
                 if not _model_allowed(model_id):
-                    self._send_json(
-                        {"error": "model not allowed; set it in gym.toml"}
-                    )
+                    self._send_json({"error": "model not allowed; set it in gym.toml"})
                     return
                 if adapter_raw and not _adapter_allowed(Path(adapter_raw)):
-                    self._send_json(
-                        {"error": "adapter must be a workspace directory"}
-                    )
+                    self._send_json({"error": "adapter must be a workspace directory"})
                     return
                 try:
                     self._send_json(
@@ -610,20 +576,14 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                 prompt = query.get("prompt", [""])[0]
                 adapter_raw = query.get("adapter", [""])[0]
                 if not prompt or not adapter_raw:
-                    self._send_json(
-                        {"error": "prompt and adapter are required"}
-                    )
+                    self._send_json({"error": "prompt and adapter are required"})
                     return
                 model_id = query.get("model", [None])[0] or default_model()
                 if not _model_allowed(model_id):
-                    self._send_json(
-                        {"error": "model not allowed; set it in gym.toml"}
-                    )
+                    self._send_json({"error": "model not allowed; set it in gym.toml"})
                     return
                 if not _adapter_allowed(Path(adapter_raw)):
-                    self._send_json(
-                        {"error": "adapter must be a workspace directory"}
-                    )
+                    self._send_json({"error": "adapter must be a workspace directory"})
                     return
                 try:
                     self._send_json(
@@ -639,9 +599,7 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                     self._send_json({"error": "no prompt"})
                     return
                 try:
-                    self._send_json(
-                        _GPU_WORKER.submit(_sae_tokens, prompt).result()
-                    )
+                    self._send_json(_GPU_WORKER.submit(_sae_tokens, prompt).result())
                 except Exception as error:
                     self._send_json({"error": str(error)})
             elif parsed.path == "/api/sae/steer":
@@ -649,23 +607,17 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                 feature_raw = query.get("feature", [""])[0]
                 alpha_raw = query.get("alpha", ["2"])[0]
                 if not prompt or not feature_raw:
-                    self._send_json(
-                        {"error": "prompt and feature are required"}
-                    )
+                    self._send_json({"error": "prompt and feature are required"})
                     return
                 try:
                     feature = int(feature_raw)
                     alpha = float(alpha_raw)
                 except ValueError:
-                    self._send_json(
-                        {"error": "feature and alpha must be numbers"}
-                    )
+                    self._send_json({"error": "feature and alpha must be numbers"})
                     return
                 try:
                     self._send_json(
-                        _GPU_WORKER.submit(
-                            _sae_steer, prompt, feature, alpha
-                        ).result()
+                        _GPU_WORKER.submit(_sae_steer, prompt, feature, alpha).result()
                     )
                 except Exception as error:
                     self._send_json({"error": str(error)})
@@ -692,18 +644,12 @@ def make_handler(ledger_path: Path, runs_dir: Path):
                             "series": metrics.get("train_series"),
                         }
                     )
-                rl_entries = [
-                    entry for entry in entries if entry.kind == "rl"
-                ]
+                rl_entries = [entry for entry in entries if entry.kind == "rl"]
                 rl_series = [
                     {
                         "adapter": entry.config.get("adapter", "?"),
-                        "mean_reward_first": entry.metrics.get(
-                            "mean_reward_first"
-                        ),
-                        "mean_reward_last": entry.metrics.get(
-                            "mean_reward_last"
-                        ),
+                        "mean_reward_first": entry.metrics.get("mean_reward_first"),
+                        "mean_reward_last": entry.metrics.get("mean_reward_last"),
                         "rounds": entry.metrics.get("rounds", []),
                     }
                     for entry in rl_entries
@@ -712,20 +658,14 @@ def make_handler(ledger_path: Path, runs_dir: Path):
             elif parsed.path == "/api/clusters":
                 clusters_path = Path("experiments/clusters.json")
                 if clusters_path.is_file():
-                    self._send_json(
-                        json.loads(clusters_path.read_text())
-                    )
+                    self._send_json(json.loads(clusters_path.read_text()))
                 else:
                     self._send_json({"clusters": {}})
             elif parsed.path == "/api/inspect":
                 self._send_json(
                     {
-                        "lens": _latest_artifact(
-                            Path("experiments"), "lens"
-                        ),
-                        "sae": _latest_artifact(
-                            Path("experiments"), "sae"
-                        ),
+                        "lens": _latest_artifact(Path("experiments"), "lens"),
+                        "sae": _latest_artifact(Path("experiments"), "sae"),
                     }
                 )
             elif parsed.path == "/api/timeline":
@@ -747,9 +687,7 @@ def make_handler(ledger_path: Path, runs_dir: Path):
     return DashboardHandler
 
 
-def run_ui(
-    port: int, ledger_path: Path, runs_dir: Path
-) -> None:
+def run_ui(port: int, ledger_path: Path, runs_dir: Path) -> None:
     """Serve the dashboard until interrupted."""
     server = ThreadingHTTPServer(
         ("127.0.0.1", port), make_handler(ledger_path, runs_dir)

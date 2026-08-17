@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from omp_gym.runner import (
@@ -28,25 +29,69 @@ from omp_gym.task import TaskSpec
 
 
 class EpisodeEnvironmentTests(unittest.TestCase):
-    def test_child_gets_only_whitelisted_host_variables(self) -> None:
+    def test_child_gets_only_scoped_variables(self) -> None:
         host_environment = {
             "PATH": "/usr/bin",
             "HOME": "/Users/me",
             "AWS_SECRET_ACCESS_KEY": "cloud-secret",
-            "PI_SESSION_FILE": "/tmp/parent-session.jsonl",
+            "PI_SESSION_FILE": "/sessions/parent-session.jsonl",
             "PI_TOOL_BRIDGE_TOKEN": "parent-token",
+            "ANTHROPIC_API_KEY": "anthropic-secret",
+            "OPENAI_API_KEY": "openai-secret",
         }
 
-        environment = _episode_environment(
-            host_environment, {"EXTRA": "value"}
-        )
+        with unittest.mock.patch("omp_gym.runner.load_env_file", return_value={}):
+            environment = _episode_environment(
+                host_environment,
+                {"EXTRA": "value"},
+                model="anthropic/claude-sonnet",
+                home=Path("/ep/home"),
+                tmpdir=Path("/ep/tmp"),
+            )
 
         self.assertEqual(environment["PATH"], "/usr/bin")
-        self.assertEqual(environment["HOME"], "/Users/me")
+        self.assertEqual(environment["HOME"], "/ep/home")
+        self.assertEqual(environment["TMPDIR"], "/ep/tmp")
         self.assertEqual(environment["EXTRA"], "value")
+        self.assertEqual(environment["ANTHROPIC_API_KEY"], "anthropic-secret")
+        self.assertNotIn("OPENAI_API_KEY", environment)
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", environment)
         self.assertNotIn("PI_SESSION_FILE", environment)
         self.assertNotIn("PI_TOOL_BRIDGE_TOKEN", environment)
+
+    def test_unresolved_provider_gets_no_key(self) -> None:
+        with unittest.mock.patch("omp_gym.runner.load_env_file", return_value={}):
+            environment = _episode_environment(
+                {"PATH": "/usr/bin"},
+                None,
+                model="vendor-x/model",
+                home=Path("/ep/home"),
+                tmpdir=Path("/ep/tmp"),
+            )
+
+        for name in environment:
+            self.assertNotRegex(name, r"(_KEY|_TOKEN|_SECRET|_PASSWORD)$")
+
+    def test_explicit_policy_secret_is_kept_only_when_supplied(self) -> None:
+        with unittest.mock.patch("omp_gym.runner.load_env_file", return_value={}):
+            kept = _episode_environment(
+                {"PATH": "/usr/bin"},
+                {"POLICY_KEY": "private"},
+                model="omp-gym/model",
+                home=Path("/ep/home"),
+                tmpdir=Path("/ep/tmp"),
+                extra_secret_names=("POLICY_KEY",),
+            )
+            scrubbed = _episode_environment(
+                {"PATH": "/usr/bin"},
+                {"POLICY_KEY": "private"},
+                model="omp-gym/model",
+                home=Path("/ep/home"),
+                tmpdir=Path("/ep/tmp"),
+            )
+
+        self.assertEqual(kept["POLICY_KEY"], "private")
+        self.assertNotIn("POLICY_KEY", scrubbed)
 
     def test_episode_prompt_contains_explicit_context_files(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -88,12 +133,8 @@ class PartialCreditTests(unittest.TestCase):
         self.assertEqual(_partial_credit("2 failed, 6 passed in 0.1s"), 0.75)
 
     def test_pytest_errors_count_against_partial_credit(self) -> None:
-        self.assertEqual(
-            _partial_credit("1 error, 10 passed in 0.1s"), 10 / 11
-        )
-        self.assertEqual(
-            _partial_credit("2 errors, 3 failed, 5 passed in 0.1s"), 0.5
-        )
+        self.assertEqual(_partial_credit("1 error, 10 passed in 0.1s"), 10 / 11)
+        self.assertEqual(_partial_credit("2 errors, 3 failed, 5 passed in 0.1s"), 0.5)
 
     def test_returns_none_without_counts(self) -> None:
         self.assertIsNone(_partial_credit("Segmentation fault"))
@@ -139,9 +180,7 @@ class ScoreTestRunTests(unittest.TestCase):
         self.assertEqual(_score_test_run(0, output), (1.0, 1.0, 8))
 
     def test_failure_keeps_partial_credit(self) -> None:
-        reward, partial, evidence = _score_test_run(
-            1, "2 of 8 cases failed\n"
-        )
+        reward, partial, evidence = _score_test_run(1, "2 of 8 cases failed\n")
         self.assertEqual(reward, 0.0)
         self.assertEqual(partial, 0.75)
         self.assertEqual(evidence, 0)
@@ -162,7 +201,7 @@ class ExploitSubprocessTests(unittest.TestCase):
             workspace = Path(temporary_directory) / "ws"
             shutil.copytree(task_workspace, workspace)
             (workspace / solution_name).write_text(solution_text)
-            completed = subprocess.run(
+            completed = subprocess.run(  # noqa: S603 - trusted interpreter
                 list(command),
                 cwd=workspace,
                 capture_output=True,
@@ -172,14 +211,7 @@ class ExploitSubprocessTests(unittest.TestCase):
         return completed.returncode, completed.stdout + completed.stderr
 
     def test_python_exit_zero_exploit_scores_zero(self) -> None:
-        exploit = (
-            "import os\n"
-            "os._exit(0)\n"
-            "\n"
-            "\n"
-            "def fizzbuzz(value):\n"
-            "    return ''\n"
-        )
+        exploit = "import os\nos._exit(0)\n\n\ndef fizzbuzz(value):\n    return ''\n"
         returncode, output = self.run_in_copy(
             TASKS_DIR / "fizzbuzz-fix" / "workspace",
             "fizzbuzz.py",
@@ -193,13 +225,8 @@ class ExploitSubprocessTests(unittest.TestCase):
         self.assertEqual(evidence, 0)
 
     def test_node_uncaught_exception_exploit_scores_zero(self) -> None:
-        stub = (
-            TASKS_DIR / "js-deep-get" / "workspace" / "deep_get.mjs"
-        ).read_text()
-        exploit = (
-            "process.on('uncaughtException', () => process.exit(0));\n"
-            + stub
-        )
+        stub = (TASKS_DIR / "js-deep-get" / "workspace" / "deep_get.mjs").read_text()
+        exploit = "process.on('uncaughtException', () => process.exit(0));\n" + stub
         returncode, output = self.run_in_copy(
             TASKS_DIR / "js-deep-get" / "workspace",
             "deep_get.mjs",
@@ -257,11 +284,9 @@ class ProtectedFilesTests(unittest.TestCase):
             (workspace / "lib" / "app_test.js").write_text("check()\n")
             (workspace / "tests").mkdir()
             (workspace / "tests" / "helper.py").write_text("pass\n")
-            task = make_task(
-                workspace, ("python3", "test_app.py", "cases.txt")
-            )
+            task = make_task(workspace, ("python3", "test_app.py", "cases.txt"))
 
-            protected = _protected_files(task)
+            protected = _protected_files(task.workspace, task.test_command)
 
         self.assertEqual(
             protected,
@@ -279,7 +304,7 @@ class ProtectedFilesTests(unittest.TestCase):
             (workspace / "app.py").write_text("answer = 0\n")
             task = make_task(workspace, ("python3", "-m", "unittest"))
 
-            protected = _protected_files(task)
+            protected = _protected_files(task.workspace, task.test_command)
 
         self.assertEqual(protected, ())
 
@@ -289,9 +314,7 @@ class ChangedProtectedFilesTests(unittest.TestCase):
         pristine = root / "pristine"
         pristine.mkdir()
         (pristine / "app.py").write_text("answer = 0\n")
-        (pristine / "test_app.py").write_text(
-            "import app\nassert app.answer == 42\n"
-        )
+        (pristine / "test_app.py").write_text("import app\nassert app.answer == 42\n")
         return pristine
 
     def test_truncated_test_file_is_caught_and_named(self) -> None:
@@ -299,7 +322,7 @@ class ChangedProtectedFilesTests(unittest.TestCase):
             root = Path(temporary_directory)
             pristine = self.make_pristine(root)
             task = make_task(pristine, ("python3", "test_app.py"))
-            protected = _protected_files(task)
+            protected = _protected_files(task.workspace, task.test_command)
             digests = _file_digests(pristine, protected)
             episode = root / "ws"
             shutil.copytree(pristine, episode)
@@ -315,7 +338,9 @@ class ChangedProtectedFilesTests(unittest.TestCase):
             root = Path(temporary_directory)
             pristine = self.make_pristine(root)
             task = make_task(pristine, ("python3", "test_app.py"))
-            digests = _file_digests(pristine, _protected_files(task))
+            digests = _file_digests(
+                pristine, _protected_files(task.workspace, task.test_command)
+            )
             episode = root / "ws"
             shutil.copytree(pristine, episode)
             (episode / "test_app.py").unlink()
@@ -329,7 +354,9 @@ class ChangedProtectedFilesTests(unittest.TestCase):
             root = Path(temporary_directory)
             pristine = self.make_pristine(root)
             task = make_task(pristine, ("python3", "test_app.py"))
-            digests = _file_digests(pristine, _protected_files(task))
+            digests = _file_digests(
+                pristine, _protected_files(task.workspace, task.test_command)
+            )
             episode = root / "ws"
             shutil.copytree(pristine, episode)
             (episode / "app.py").write_text("answer = 42\n")
@@ -340,29 +367,14 @@ class ChangedProtectedFilesTests(unittest.TestCase):
 
 
 class TestEnvironmentTests(unittest.TestCase):
-    def test_test_process_gets_only_four_host_variables(self) -> None:
-        host_environment = {
-            "PATH": "/usr/bin",
-            "HOME": "/Users/me",
-            "TMPDIR": "/tmp",
-            "LANG": "en_US.UTF-8",
-            "USER": "me",
-            "TERM": "xterm",
-            "OPENAI_API_KEY": "provider-secret",
-            "AWS_SECRET_ACCESS_KEY": "cloud-secret",
-        }
+    def test_test_process_gets_no_host_configuration(self) -> None:
+        environment = _test_environment(Path("/ep/home"), Path("/ep/tmp"))
 
-        environment = _test_environment(host_environment)
-
-        self.assertEqual(
-            environment,
-            {
-                "PATH": "/usr/bin",
-                "HOME": "/Users/me",
-                "TMPDIR": "/tmp",
-                "LANG": "en_US.UTF-8",
-            },
-        )
+        self.assertEqual(environment["HOME"], "/ep/home")
+        self.assertEqual(environment["TMPDIR"], "/ep/tmp")
+        self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
+        for name in environment:
+            self.assertNotRegex(name, r"(_KEY|_TOKEN|_SECRET|_PASSWORD)$")
 
 
 class BaselinePassedTests(unittest.TestCase):
@@ -389,16 +401,12 @@ HOOK_NAMES = (
 
 
 class EvalOverlayTests(unittest.TestCase):
-    def build_workspaces(
-        self, root: Path
-    ) -> tuple[Path, Path, tuple[str, ...]]:
+    def build_workspaces(self, root: Path) -> tuple[Path, Path, tuple[str, ...]]:
         pristine = root / "pristine"
         pristine.mkdir()
         (pristine / "app.py").write_text("answer = 0\n")
         (pristine / "test_app.py").write_text(
-            "import app\n"
-            "assert app.answer == 42\n"
-            "print('all 1 cases passed')\n"
+            "import app\nassert app.answer == 42\nprint('all 1 cases passed')\n"
         )
         episode = root / "ws"
         shutil.copytree(pristine, episode)
@@ -410,18 +418,17 @@ class EvalOverlayTests(unittest.TestCase):
         (episode / "__pycache__" / "app.cpython-311.pyc").write_bytes(b"\x00")
         for name in HOOK_NAMES:
             (episode / name).write_text("print('all 99 cases passed')\n")
-            (episode / "pkg" / name).write_text(
-                "print('all 99 cases passed')\n"
-            )
+            (episode / "pkg" / name).write_text("print('all 99 cases passed')\n")
         task = make_task(pristine, ("python3", "test_app.py"))
-        return pristine, episode, _protected_files(task)
+        return pristine, episode, _protected_files(task.workspace, task.test_command)
 
     def test_overlay_excludes_hooks_and_protected_files(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             pristine, episode, protected = self.build_workspaces(root)
 
-            overlay = _overlay_files(pristine, episode, protected)
+            overlay, refused = _overlay_files(pristine, episode, protected)
+            self.assertEqual(refused, ())
 
         self.assertEqual(overlay, ("app.py", "helper.py", "pkg/util.py"))
 
@@ -431,24 +438,18 @@ class EvalOverlayTests(unittest.TestCase):
             pristine, episode, protected = self.build_workspaces(root)
             # The agent also tampers with the protected test file
             # inside its workspace; the eval copy must not see it.
-            (episode / "test_app.py").write_text(
-                "print('all 99 cases passed')\n"
-            )
+            (episode / "test_app.py").write_text("print('all 99 cases passed')\n")
 
-            eval_dir = _build_eval_dir(
-                root / "eval", pristine, episode, protected
-            )
+            refused = _build_eval_dir(root / "eval", pristine, episode, protected)
+            eval_dir = root / "eval"
+            self.assertEqual(refused, ())
 
             self.assertEqual(
                 (eval_dir / "test_app.py").read_text(),
                 (pristine / "test_app.py").read_text(),
             )
-            self.assertEqual(
-                (eval_dir / "app.py").read_text(), "answer = 42\n"
-            )
-            self.assertEqual(
-                (eval_dir / "helper.py").read_text(), "VALUE = 1\n"
-            )
+            self.assertEqual((eval_dir / "app.py").read_text(), "answer = 42\n")
+            self.assertEqual((eval_dir / "helper.py").read_text(), "VALUE = 1\n")
             for name in HOOK_NAMES:
                 self.assertEqual(list(eval_dir.rglob(name)), [])
             self.assertEqual(list(eval_dir.rglob("*.pyc")), [])
@@ -482,7 +483,7 @@ class RunGroupedTests(unittest.TestCase):
     def test_timeout_kills_the_whole_process_group(self) -> None:
         result = _run_grouped(
             ("python3", "-c", SPAWN_AND_HANG),
-            env=_test_environment(os.environ),
+            env=_test_environment(Path("/ep/home"), Path("/ep/tmp")),
             timeout=2,
         )
 
@@ -493,7 +494,7 @@ class RunGroupedTests(unittest.TestCase):
     def test_normal_exit_still_kills_background_helpers(self) -> None:
         result = _run_grouped(
             ("python3", "-c", SPAWN_AND_EXIT),
-            env=_test_environment(os.environ),
+            env=_test_environment(Path("/ep/home"), Path("/ep/tmp")),
             timeout=30,
         )
 
@@ -524,33 +525,39 @@ class FindSessionFileTests(unittest.TestCase):
 
     def test_empty_session_dir_gives_none(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            self.assertIsNone(
-                _find_session_file(Path(temporary_directory))
-            )
+            self.assertIsNone(_find_session_file(Path(temporary_directory)))
 
 
 class RunEpisodeBaselineTests(unittest.TestCase):
+    def run_episode_no_sandbox(self, task: TaskSpec, runs_dir: Path) -> EpisodeFailure:
+        """run_episode with sandboxing off: deterministic on any host."""
+        with unittest.mock.patch.dict(os.environ, {"OMP_GYM_SANDBOX": "0"}):
+            result = run_episode(task, runs_dir, model=None)
+        self.assertIsInstance(result, EpisodeFailure)
+        assert isinstance(result, EpisodeFailure)
+        return result
+
+    def make_baseline_task(self, root: Path, test_source: str) -> tuple[TaskSpec, Path]:
+        workspace = root / "task"
+        workspace.mkdir()
+        (workspace / "app.py").write_text("answer = 42\n")
+        (workspace / "test_app.py").write_text(test_source)
+        task = make_task(workspace, ("python3", "test_app.py"))
+        return task, root / "runs"
+
     def test_already_passing_task_fails_before_omp_starts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            workspace = root / "task"
-            workspace.mkdir()
-            (workspace / "app.py").write_text("answer = 42\n")
-            (workspace / "test_app.py").write_text(
-                "import app\n"
-                "assert app.answer == 42\n"
-                "print('all 1 cases passed')\n"
+            task, runs_dir = self.make_baseline_task(
+                root,
+                "import app\nassert app.answer == 42\nprint('all 1 cases passed')\n",
             )
-            task = make_task(workspace, ("python3", "test_app.py"))
-            runs_dir = root / "runs"
 
-            result = run_episode(task, runs_dir, model=None)
+            result = self.run_episode_no_sandbox(task, runs_dir)
 
-            self.assertIsInstance(result, EpisodeFailure)
-            assert isinstance(result, EpisodeFailure)
             self.assertEqual(
                 result.reason,
-                "task already passes before the agent runs",
+                "invalid task: already passes before the agent runs",
             )
             # The gate fires before omp starts, so no episode
             # artifacts beyond the baseline log exist.
@@ -559,6 +566,39 @@ class RunEpisodeBaselineTests(unittest.TestCase):
             self.assertFalse((episode_dirs[0] / "ws").exists())
             self.assertFalse((episode_dirs[0] / "prompt.txt").exists())
 
+    def test_baseline_exit_zero_without_evidence_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task, runs_dir = self.make_baseline_task(root, "print('nothing ran')\n")
+
+            result = self.run_episode_no_sandbox(task, runs_dir)
+
+            self.assertEqual(
+                result.reason,
+                "invalid task: baseline exited 0 without test evidence",
+            )
+            episode_dirs = list(runs_dir.iterdir())
+            self.assertEqual(len(episode_dirs), 1)
+            self.assertFalse((episode_dirs[0] / "ws").exists())
+
+    def test_baseline_without_case_count_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task, runs_dir = self.make_baseline_task(
+                root,
+                "import sys\nprint('boom')\nsys.exit(1)\n",
+            )
+
+            result = self.run_episode_no_sandbox(task, runs_dir)
+
+            self.assertEqual(
+                result.reason,
+                "invalid task: baseline output does not report a "
+                "case count; set expected_cases in task.toml",
+            )
+            episode_dirs = list(runs_dir.iterdir())
+            self.assertEqual(len(episode_dirs), 1)
+            self.assertFalse((episode_dirs[0] / "ws").exists())
 
 
 if __name__ == "__main__":

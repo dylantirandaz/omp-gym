@@ -12,15 +12,16 @@ runs through `uv run omp-gym <verb>`.
 
 1. `preflight` — verify the Metal GPU. Run before training.
 2. `run --task tasks/<name> [--model <m>]` — one scored episode.
-   Fresh workspace copy, real omp session, tests decide the reward
-   (1.0 or 0.0). Artifacts land in `runs/<task>-<stamp>/`.
-3. `export` — build `dataset/train.jsonl` and `dataset/valid.jsonl`
-   from scored episodes and from every omp session on this
-   machine. Per-turn samples, exact token budgets, split by
-   trajectory. `--pairs` writes DPO pairs instead.
+   A copied workspace and a real omp session produce test reward,
+   case evidence, partial credit, and baseline improvement.
+   Artifacts go to `runs/<task>-<stamp>/`.
+3. `export [--sessions PATH]` — build `dataset/train.jsonl` and
+   `dataset/valid.jsonl` from scored episodes. Session harvesting
+   is opt-in. Samples use one assistant turn and its context.
+   `--pairs` writes DPO pairs instead.
 4. `train --data dataset --model <mlx-model> --iters N --adapter
    adapters/<name> [--method sft|dpo] [--resume-adapter FILE]` —
-   LoRA on the Metal GPU. Fails on NaN loss or a flat loss curve.
+   LoRA on the Metal GPU. Fails on a non-finite or flat loss curve.
    Writes `adapters/<name>/train_report.json`.
 5. `bench --models "a,b,c" --tasks tasks --trials N` — model x
    task grid. Writes `bench-report.md` and `bench-report.jsonl`
@@ -34,16 +35,17 @@ runs through `uv run omp-gym <verb>`.
    over every layer. Artifact under `experiments/`.
 10. `sae --adapter adapters/<name>` — tiny SAE on residual
     activations. Research preview.
-11. `rl --task tasks/<name> --adapter adapters/<name> --group K
-    --iters N` — group-relative policy gradient on live episodes.
+11. `rl --task tasks/<name> [--task tasks/<name> ...]
+    --adapter adapters/<name> --group K --iters N` — REINFORCE
+    with a normalized group-mean baseline over live episodes.
 12. `mint` — write runnable tasks from failed sessions into
     `tasks/minted/`.
 13. `import --from claude|codex` — import other agents' sessions.
 14. `clusters` — failure-mode counts with example artifacts.
-15. `fix --task tasks/<name> --anchor <model>` — measured
-    before/after retrain on one task.
-16. `doctor` / `init` — environment checks; first scored episode.
-17. `publish --push` — render the ledger to GitHub Pages.
+15. `doctor` / `init` — environment checks; first scored episode.
+16. `publish --push` — render and commit the ledger page, then
+    push local `main` to `origin`.
+    GitHub Pages setup stays manual.
 
 ## Procedure for improving the model
 
@@ -88,7 +90,8 @@ jobs when a remote Apple GPU is available.
 
 - Keys live in the gitignored `.env`. Never print or commit them.
 - Training must pass the GPU preflight. Do not fall back to CPU.
-- Judge episodes only by test reward.
+- Judge an episode by test reward, case evidence, and baseline
+  improvement. Do not use claims from model output.
 - `runs/`, `dataset/`, `adapters/`, `experiments/` stay out of git.
 - Write the session summary early and update it as you work. The
   clock can cut the session at any time.

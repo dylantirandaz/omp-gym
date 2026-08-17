@@ -42,15 +42,16 @@ class SteerResult:
     steered_tool_calls: int
     steered_texts: tuple[str, ...]
     unsteered_texts: tuple[str, ...]
+    seed: int = 0
 
 
 def _steered_forward(model, ids, direction, alpha, capture_layer):
     """Run a forward pass with the direction added at one layer."""
     inner = model.model
     h = inner.embed_tokens(ids)
-    mask = nn.MultiHeadAttention.create_additive_causal_mask(
-        ids.shape[1]
-    ).astype(h.dtype)
+    mask = nn.MultiHeadAttention.create_additive_causal_mask(ids.shape[1]).astype(
+        h.dtype
+    )
     for index, layer in enumerate(inner.layers):
         h = layer(h, mask=mask, cache=None)
         if index == capture_layer:
@@ -85,16 +86,17 @@ def run_ab(
     alpha: float,
     prompts: list[str],
     max_tokens: int,
+    seed: int = 0,
 ) -> SteerResult:
     """Compare steered and unsteered completions on the prompts."""
     require_metal_gpu()
+    mx.random.seed(seed)
     if not weights_path.is_file():
         raise SteerError(f"no SAE weights at {weights_path}")
     weights = mx.load(str(weights_path))
     if not (0 <= feature < weights["dec_w"].shape[1]):
         raise SteerError(
-            f"feature {feature} out of range "
-            f"0..{weights['dec_w'].shape[1] - 1}"
+            f"feature {feature} out of range 0..{weights['dec_w'].shape[1] - 1}"
         )
     direction = weights["dec_w"][:, feature]
 
@@ -111,9 +113,7 @@ def run_ab(
     steered_calls = 0
     for prompt in prompts:
         prompt_ids = mx.array(tokenizer.encode(prompt))
-        base_text = _generate(
-            model, tokenizer, prompt_ids, direction, 0.0, max_tokens
-        )
+        base_text = _generate(model, tokenizer, prompt_ids, direction, 0.0, max_tokens)
         steered_text = _generate(
             model, tokenizer, prompt_ids, direction, alpha, max_tokens
         )
@@ -132,6 +132,7 @@ def run_ab(
         steered_tool_calls=steered_calls,
         steered_texts=tuple(steered_texts),
         unsteered_texts=tuple(unsteered_texts),
+        seed=seed,
     )
 
 
@@ -143,9 +144,14 @@ def report_ab(result: SteerResult, out_dir: Path) -> dict:
     payload = {
         "feature": result.feature,
         "alpha": result.alpha,
+        "seed": result.seed,
         "prompts": result.prompts,
         "unsteered_tool_calls": result.unsteered_tool_calls,
         "steered_tool_calls": result.steered_tool_calls,
+        "tool_call_note": (
+            "tool-call count is a format metric: it measures "
+            "well-formed <tool_call> output, not task correctness"
+        ),
         "unsteered_texts": list(result.unsteered_texts),
         "steered_texts": list(result.steered_texts),
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),

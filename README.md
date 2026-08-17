@@ -56,9 +56,10 @@ default is `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit`.
 workspace is a repository state where the test command fails. The
 prompt asks the agent to make the tests pass.
 
-**Episode.** One omp run on a task in a copied workspace. The test
-command scores the episode: exit 0 gives reward 1.0, any other
-exit code gives 0.0.
+**Episode.** One omp run on a task in a copied workspace. Reward
+1.0 requires exit 0 and a positive passed-case count. A failed
+test run can also record partial credit. RL uses improvement over
+the pre-agent baseline when that value is available.
 
 **Ledger.** `experiments/ledger.jsonl`. Every command appends one
 JSON line with its config, metrics, and artifact paths. The report
@@ -95,14 +96,14 @@ sessions path to include it, and review what you include. Bench
 pass rates count every scheduled episode; error rows stay in the
 denominator. `--pairs` writes DPO preference pairs split by task.
 
-`train --model M --iters N --adapter DIR [--num-layers N]
+`train --model M --iters N --adapter DIR [--num-layers N|all]
 [--learning-rate R] [--method sft|dpo] [--resume-adapter FILE]`
 — train LoRA weights
 on the Metal GPU. SFT trains the last 16 layers by default. Set
-`--num-layers -1` to train all layers. `sft` uses mlx-lm. `dpo`
+`--num-layers all` to train all layers. `sft` uses mlx-lm. `dpo`
 uses a native MLX sigmoid-DPO loop and requires `--resume-adapter`.
-Training fails when the loss does not decrease, when a loss is
-NaN, or when the adapter file is not written.
+Training fails when a loss or tensor is not finite, when the loss
+does not decrease, or when the adapter file is not written.
 
 `serve --adapter DIR [--port N]` — serve an adapter behind an
 OpenAI-compatible endpoint and register it as an omp provider.
@@ -145,18 +146,19 @@ a JSON artifact under `experiments/`.
 autoencoder on residual-stream activations from the dataset.
 Research preview. Writes a feature report under `experiments/`.
 
-`rl --task DIR --adapter DIR --group K --iters N` —
-group-relative policy gradient over live episodes. Each iteration
-serves the current adapter, samples K episodes in parallel, scores
-them with the task tests, and updates toward episodes that beat
-the group mean. Graded rewards (from tests that print "N of M
-cases failed") are used when available.
+`rl --task DIR [--task DIR ...] --adapter DIR --group K --iters N`
+— REINFORCE with a normalized group-mean baseline over live
+episodes. A seeded schedule supports a mix of tasks. Each
+iteration serves the current adapter, samples K episodes in
+sequence, scores them with the task tests, and updates every
+captured assistant turn. Partial rewards measure improvement over
+the pre-agent baseline. `--kl-beta` adds a reference-policy term.
 
 `mint [--limit N]` — scan sessions for failure signals (user
-corrections, late test failures) and write runnable tasks from
-them into `tasks/minted/`. Workspaces are reconstructed from
-write-tool contents only; path fields that are device URLs are
-skipped.
+corrections and late test failures) and write runnable tasks into
+`tasks/minted/`. Workspaces use the latest file content from read
+and write tool calls. Paths are relative to the session working
+directory. Device URLs are skipped.
 
 `import --from claude|codex` — convert another agent's session
 store to the omp session schema under `imported/`. Export with
@@ -174,8 +176,9 @@ the fix for each failure.
 `init` — doctor plus one scored episode with the default model.
 
 `publish [--push]` — render the ledger report to
-`docs/index.html`. With `--push`: commit, push, and enable GitHub
-Pages for the repo.
+`docs/index.html`. With `--push`, commit only that file, then push
+local `main` to `origin`.
+GitHub Pages setup stays a manual step.
 
 ## Serve, in the omp UI
 
@@ -191,39 +194,51 @@ JSON objects.
 ## Provider keys
 
 Put provider keys in `.env` at the project root (`KEY=VALUE`
-lines). The file is gitignored. Every episode loads it; its values
-are part of the episode environment. A malformed line stops the
-run with the file and line number.
+lines). The file is gitignored. A remote episode receives only
+the key names for its resolved provider. A local-model episode
+receives no provider key. Other credential-shaped variables stay
+out. A malformed line stops the run with the file and line number.
+
+The remote-agent sandbox permits outbound HTTPS because Seatbelt
+cannot select DNS hosts. Thus, an untrusted task can send the
+selected provider key to another HTTPS host. Use a provider key
+with a hard spend limit.
 
 ## Trust boundary
 
-Episodes are not sandboxed. `omp-gym run` starts a real omp
-session with auto-approval on this machine, in a copied workspace
-that is not a security boundary. The episode can run shell
-commands, read the filesystem, and see the provider keys from
-`.env` (other host variables stay out; the child environment is a
-small whitelist). Prefer a dedicated macOS account or a disposable
-machine, and a provider key with a hard spend limit.
+On macOS, isolation is on by default. Each agent and test command
+runs under a deny-default `sandbox-exec` profile. The agent can
+write only its episode workspace, session, home, and temporary
+directories. A remote model gets outbound HTTPS. A local model
+gets loopback access only. Baseline, canary, and evaluation
+commands get no network and no provider key.
 
-The harness enforces what it can without a VM:
+Each child gets CPU, file-size, open-file, and process limits. A
+small launcher applies these limits before it starts the target.
+Linux also gets an address-space limit. macOS does not enforce
+`RLIMIT_AS`, so memory isolation needs a virtual machine. The full
+process group stops at the deadline, on excess output, and after
+normal exit.
 
-- Episode and test processes run in their own process group; the
-  whole tree dies at the deadline and before scoring.
-- Tests never run inside the agent workspace. A fresh directory
-  gets the pristine test files plus the agent's solution files;
-  planted hook files (conftest.py, pytest.ini, .pth, and similar)
-  never cross over. The test process gets a minimal environment
-  with no provider keys.
-- Every task runs a pre-agent baseline; a task that already
-  passes is an error, not a free reward.
-- Test files are hashed; an episode that changes them scores zero.
-- Reward needs positive evidence: exit 0 without a parseable
-  passed-case count scores zero.
+The run fails when `sandbox-exec` is not available. Set
+`OMP_GYM_SANDBOX=0` only to accept an unsandboxed run explicitly.
 
-One residual stays open by design of the process model: solution
-code that the tests import runs inside the test process and can in
-principle forge output. A virtual machine boundary is the real
-fix; treat rewards from untrusted tasks accordingly.
+The harness also uses these reward controls:
+
+- Tests run in a fresh directory, not in the agent workspace.
+  The directory gets pristine test files and selected solution
+  files. Planted hook files do not cross this boundary.
+- Every task runs a pre-agent baseline. A task that already passes
+  is an error.
+- Test files are hashed. An episode that changes them scores zero.
+- Reward needs positive evidence. Exit 0 without a passed-case
+  count scores zero.
+
+`sandbox-exec` is deprecated and gives a process boundary, not a
+virtual-machine boundary. The remote agent also has one provider
+key and HTTPS access. Solution code runs in the test process and
+can try to forge output. Use a disposable VM for untrusted tasks,
+public services, or multi-tenant work.
 
 ## Data locations
 
@@ -240,9 +255,9 @@ does.
 
 - Bench numbers use one trial per cell unless you raise
   `--trials`; treat single-trial numbers as samples, not scores.
-- `rl` is REINFORCE with a group-mean baseline, not GRPO: no KL
-  term, no clipping, and the gradient lands on the first
-  assistant turn only.
+- `rl` is REINFORCE with a normalized group-mean baseline and an
+  optional KL term. It applies the summed log-probability to every
+  captured assistant turn. It does not use PPO or GRPO clipping.
 - Exported trajectories are synthetic reconstructions: the last
   edit per file becomes a full-file write, and failed calls drop.
   They are cleaner than the real behavior that produced them.
@@ -290,16 +305,13 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
 - Dataset signal: 21,039 train samples are unique. 21,015 samples
   contain tool calls and only 24 are prose-only. v3 plus v5 saw
   about 400 samples, which is less than 2% of this train set.
-- RL: GRPO rounds on fizzbuzz-fix with the served 0.5B policy.
-  Graded rewards (0.7 = 7 of 10 cases) arrived correctly. The
-  group showed no variance, so no update happened and the ledger
-  says so. The real finding: at temperature 1.0 the overfit
-  adapter emits empty turns, so the 0.7 partial rewards come from
-  the unmodified buggy workspace passing 7 of 10 cases on its
-  own. GRPO cannot learn from a policy that says nothing. The
-  mechanism and the honest no-signal path are verified; the
-  blocker is policy entropy, which the base model has and the
-  adapter lost to over-fitting.
+- RL: earlier group-relative rounds ran on fizzbuzz-fix with the
+  served 0.5B policy. Graded rewards (0.7 = 7 of 10 cases) arrived
+  correctly. The group showed no variance, so no update happened
+  and the ledger says so. At temperature 1.0, the overfit adapter
+  emitted empty turns. The 0.7 partial reward came from the
+  unmodified workspace, which passed 7 of 10 cases. A group-mean
+  update cannot learn when the policy gives no trainable output.
 - RL on v5: three parallel rollouts overloaded the single-request
   MLX server. Two rollouts were lost, but the old code accepted one
   reward as a full group. Rollouts are now serial and every rollout
@@ -338,16 +350,27 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
 - Tool results longer than 4000 characters keep the head and the
   tail with an elision marker; the middle is dropped, because the
   error output lives at the end.
-- Assistant turns that exceed the token budget are kept with
-  their middle elided rather than skipped.
+- The exporter can remove the middle of long prose. A sample that
+  is still over the token limit is dropped and counted.
 - The dashboard is read-only and local. The training chart draws
   real loss curves only for adapters trained after series
   recording was added (v6 onward).
 
 ## Prime Intellect Environments Hub
 
-`environments/omp-coding/` wraps the episode runner as a
-verifiers-compatible environment. Rollouts run real omp episodes
-against the policy endpoint that the trainer provides. To publish,
-install the Prime CLI, log in, and run `prime env push` from that
-directory.
+`environments/omp-coding/` is a Verifiers 0.3.0 evaluation
+environment. Its wheel includes all 18 public tasks. Each rollout
+creates a temporary omp provider configuration, runs one real omp
+episode against the Verifiers policy endpoint, and returns the exact
+binary `EpisodeRecord.reward`.
+
+The host must have `omp` on `PATH`. The package does not change the
+user's omp configuration. Build and test the wheel before publication,
+then run:
+
+```sh
+prime env push --path environments/omp-coding --visibility PUBLIC
+```
+
+See `environments/omp-coding/README.md` for the local one-rollout
+smoke command and the pinned API assumptions.

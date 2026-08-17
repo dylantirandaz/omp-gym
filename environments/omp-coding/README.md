@@ -1,36 +1,122 @@
 # omp-coding
 
-Agentic coding tasks driven by the omp harness.
+`omp-coding` is a [Verifiers](https://github.com/PrimeIntellect-ai/verifiers)
+evaluation environment for coding agents. Each rollout runs one real `omp`
+episode in a new copy of a task workspace. The task test command gives the
+reward.
 
-Each rollout is a real omp episode: the policy model calls omp's
-tools (read, bash, edit, write, grep, glob) inside a fresh copy of
-the task workspace. The task's test command produces the reward:
-exit 0 gives reward 1.0, any other exit code gives 0.0.
+The environment uses the Verifiers 0.3.0 v0 API. It returns a `vf.State` from
+`rollout()`. A registered rubric scores the state with the binary
+`EpisodeRecord.reward` value. A passing test command with valid test evidence
+gives `1.0`. All other completed episodes give `0.0`.
 
-The environment receives the policy endpoint from the verifiers
-client and hands it to omp through the keyless LM Studio discovery
-path, so no omp configuration is required.
+This package is not a policy-gradient training backend. `omp` runs as a
+separate process. Verifiers sampling arguments do not control the requests
+from that process. Use `omp-gym export` to create training data from scored
+episodes.
+
+## Runtime requirements
+
+- Python 3.11, 3.12, or 3.13.
+- `omp` on `PATH`.
+- An OpenAI-compatible policy endpoint.
+- The API key variable selected by the Verifiers provider.
+
+The Python wheel does not install the external `omp` program. Install it on
+each evaluation host before you load the environment:
+
+```sh
+curl -fsSL https://omp.sh/install | sh
+omp --version
+```
+
+For each rollout, the environment creates a temporary `models.yml`. This file
+points `omp` at `client.config.api_base_url`. It uses
+`client.config.api_key_var` and the configured static headers. The API key
+value stays in the child process environment and out of the rollout state.
+Static headers are in the temporary file. The file has mode `0600` and is
+removed after the episode. The environment does not change
+`~/.omp/agent/models.yml`.
 
 ## Tasks
 
-Three tasks ship in the package:
+The wheel includes these 18 public tasks:
 
-- `fizzbuzz-fix` — find and fix a condition-order bug.
-- `csv-total` — implement a CSV column sum.
-- `slugify` — implement a URL slug function.
+- `config-overlay`
+- `csv-join`
+- `csv-total`
+- `event-sourcing`
+- `fizzbuzz-fix`
+- `graph-topo`
+- `js-csv-parse`
+- `js-deep-get`
+- `js-event-emitter`
+- `js-query-string`
+- `js-router-tree`
+- `py-rle`
+- `rate-limiter`
+- `retry-policy`
+- `rpn-calc`
+- `slugify`
+- `temp-convert`
+- `word-freq`
 
-Each task is a `task.toml` prompt plus a `workspace/` directory
-where the tests fail. Add tasks by copying the layout.
+Each task has a `task.toml` file and a `workspace/` directory. The workspace
+starts with failing tests.
 
-## Use
+## Rollout state
+
+Verifiers provides the standard state fields. This environment also sets:
+
+- `episode_reward`: the exact binary `EpisodeRecord.reward` value.
+- `episode_result`: a tagged result object.
+  - Success has `status = "success"` and the full `EpisodeRecord` under
+    `record`.
+  - Failure has `status = "failure"`, `task`, `failure_class`, and `reason`.
+
+`completion` contains the recorded `omp` messages without the first user
+prompt. A session parse failure gives a short assistant completion and adds
+`completion_error = "session_parse"` to the success result.
+
+## Local evaluation
+
+Use a model ID that the policy endpoint returns from `/v1/models`. This
+example uses the Verifiers `local` provider and one rollout:
+
+```sh
+cd environments/omp-coding
+export MODEL_ID='<exact-model-id>'
+export VLLM_API_KEY='local-placeholder'
+
+uv run vf-eval omp-coding \
+  -m "$MODEL_ID" -p local \
+  -n 1 -r 1 -c 1 --max-retries 0 \
+  -d -s -C 'episode_reward,episode_result'
+```
+
+The endpoint must accept the value in `VLLM_API_KEY`. A keyless local server
+can use a placeholder value.
+
+## Python use
 
 ```python
 import verifiers as vf
 
-env = vf.load_environment("omp-coding")
+environment = vf.load_environment("omp-coding")
 ```
 
-Evaluate with `vf-eval omp-coding -m <model> -p <provider>`.
+## Public release
 
-Requires `omp` installed and on the PATH of the machine that runs
-the rollouts.
+The package pins Verifiers to its reviewed 0.3.0 commit. It also pins
+`omp-gym` to a reviewed repository commit. Build and inspect the wheel before
+publication. Then publish with Prime CLI 0.6.23:
+
+```sh
+uv tool install 'prime==0.6.23'
+prime login
+prime env push --path environments/omp-coding --visibility PUBLIC
+```
+
+A team release can add `--team <team-name>`. The account must have a public
+user name. Do not publish until a real one-rollout evaluation passes on a host
+that has `omp` installed.

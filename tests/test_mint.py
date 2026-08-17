@@ -1,19 +1,26 @@
 """Tests for mint hardening.
 
-The tests cover five contracts: a captured command with shell
-metacharacters never becomes a task, generated task.toml is
-always loadable TOML, workspace rebuild stays inside the
-workspace root, minted text is redacted, and SOURCE.md names
-the session relative to the sessions root.
+The tests cover seven contracts: a captured command with shell
+operators never becomes a task, shlex parses quoted arguments into
+clean argv, only loader-accepted runners (python, python3, pytest,
+node) become tasks, generated tasks are validated with load_task
+before emission, generated task.toml is always loadable TOML,
+workspace rebuild stays inside the workspace root, minted text is
+redacted, and SOURCE.md names the session relative to the sessions
+root.
 """
 
+import io
 import json
 import tempfile
 import tomllib
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from omp_gym.mint import _split_test_command, mint_tasks
+from omp_gym.task import TaskLoadError
 
 
 def _user(text: str) -> str:
@@ -74,16 +81,28 @@ class CommandCaptureTests(unittest.TestCase):
             "pytest `whoami`",
             "pytest $(cat /etc/passwd)",
             "pytest > /tmp/out",
-            'pytest -k "smoke" tests/test_a.py',
-            "pytest -k 'smoke' tests/test_a.py",
+            "pytest (tests/)",
         )
         for command in dirty:
             self.assertIsNone(_split_test_command(command))
+
+    def test_an_unbalanced_quote_is_rejected(self) -> None:
+        self.assertIsNone(_split_test_command('pytest -k "smoke'))
 
     def test_plain_command_splits_to_argv(self) -> None:
         self.assertEqual(
             _split_test_command("pytest tests/unit/test_x.py -q"),
             ["pytest", "tests/unit/test_x.py", "-q"],
+        )
+
+    def test_quoted_arguments_split_cleanly_with_shlex(self) -> None:
+        self.assertEqual(
+            _split_test_command('pytest -k "smoke test" tests/test_a.py'),
+            ["pytest", "-k", "smoke test", "tests/test_a.py"],
+        )
+        self.assertEqual(
+            _split_test_command("pytest -k 'smoke' tests/test_a.py"),
+            ["pytest", "-k", "smoke", "tests/test_a.py"],
         )
 
     def test_injection_session_mints_nothing(self) -> None:
@@ -102,8 +121,106 @@ class CommandCaptureTests(unittest.TestCase):
             self.assertEqual(list(out.rglob("task.toml")), [])
 
 
+class RunnerAllowlistTests(unittest.TestCase):
+    def test_cargo_and_go_commands_are_skipped_with_a_note(self) -> None:
+        for command in ("cargo test --all", "go test ./...", "npm test"):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                sessions = root / "sessions"
+                sessions.mkdir()
+                out = root / "tasks"
+                _write_session(
+                    sessions,
+                    command,
+                    {"src/a.py": "x = 1\n"},
+                )
+                captured = io.StringIO()
+                with redirect_stdout(captured):
+                    minted = mint_tasks(sessions, out, 5)
+                self.assertEqual(minted, [])
+                self.assertEqual(list(out.rglob("task.toml")), [])
+                note = captured.getvalue()
+                self.assertIn("skipping test command", note)
+                self.assertIn(command.split()[0], note)
+
+    def test_an_earlier_loadable_command_survives_a_later_cargo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sessions = root / "sessions"
+            sessions.mkdir()
+            out = root / "tasks"
+            blocks: list[dict[str, object]] = [
+                {
+                    "type": "toolCall",
+                    "id": "w1",
+                    "name": "write",
+                    "arguments": {
+                        "path": "tests/unit/test_x.py",
+                        "content": "def test_a():\n    assert True\n",
+                    },
+                },
+                {
+                    "type": "toolCall",
+                    "id": "b1",
+                    "name": "bash",
+                    "arguments": {"command": "pytest tests/unit/test_x.py"},
+                },
+                {
+                    "type": "toolCall",
+                    "id": "b2",
+                    "name": "bash",
+                    "arguments": {"command": "cargo test --all"},
+                },
+            ]
+            lines = [
+                _user("Fix the parser."),
+                json.dumps(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "assistant",
+                            "content": blocks,
+                        },
+                    }
+                ),
+                _user("no, that's wrong. it is still failing."),
+            ]
+            (sessions / "session.jsonl").write_text("\n".join(lines) + "\n")
+            with redirect_stdout(io.StringIO()):
+                minted = mint_tasks(sessions, out, 5)
+            self.assertEqual(len(minted), 1)
+            self.assertEqual(minted[0].test_command, "pytest tests/unit/test_x.py")
+
+
+class ValidationTests(unittest.TestCase):
+    def test_a_task_the_loader_rejects_is_reported_not_emitted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sessions = root / "sessions"
+            sessions.mkdir()
+            out = root / "tasks"
+            _write_session(
+                sessions,
+                "pytest tests/unit/test_x.py -q",
+                {"tests/unit/test_x.py": "def test_a():\n    assert True\n"},
+            )
+            captured = io.StringIO()
+            with (
+                mock.patch(
+                    "omp_gym.mint.load_task",
+                    return_value=TaskLoadError(
+                        Path("x"), "test_command must start with one of"
+                    ),
+                ),
+                redirect_stdout(captured),
+            ):
+                minted = mint_tasks(sessions, out, 5)
+            self.assertEqual(minted, [])
+            self.assertIn("failed validation", captured.getvalue())
+
+
 class TomlOutputTests(unittest.TestCase):
-    def test_quoted_selector_never_writes_broken_toml(self) -> None:
+    def test_quoted_selector_mints_clean_argv_and_valid_toml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             sessions = root / "sessions"
@@ -115,7 +232,13 @@ class TomlOutputTests(unittest.TestCase):
                 {"tests/unit/test_x.py": "def test_smoke():\n    pass\n"},
             )
             minted = mint_tasks(sessions, out, 5)
-            self.assertEqual(minted, [])
+            self.assertEqual(len(minted), 1)
+            config = Path(minted[0].task_dir) / "task.toml"
+            raw = tomllib.loads(config.read_text())
+            self.assertEqual(
+                raw["test_command"],
+                ["pytest", "-k", "smoke", "tests/unit/test_x.py"],
+            )
             for config in out.rglob("task.toml"):
                 tomllib.loads(config.read_text())
 
@@ -161,9 +284,7 @@ class WorkspaceContainmentTests(unittest.TestCase):
             self.assertEqual(len(minted), 1)
             task_dir = Path(minted[0].task_dir)
             self.assertFalse((task_dir / "escape.py").exists())
-            self.assertTrue(
-                (task_dir / "workspace" / "src" / "ok.py").is_file()
-            )
+            self.assertTrue((task_dir / "workspace" / "src" / "ok.py").is_file())
             self.assertEqual(list(root.rglob("escape.py")), [])
 
     def test_ancestor_unlink_cannot_reach_outside(self) -> None:
@@ -207,7 +328,7 @@ class WorkspaceContainmentTests(unittest.TestCase):
 
 class RedactionTests(unittest.TestCase):
     def test_rebuilt_file_and_prompt_are_redacted(self) -> None:
-        secret = "OPENROUTER_API_KEY=sk-or-abc12345678"
+        leaked = "OPENROUTER_API_KEY=sk-or-abc12345678"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             sessions = root / "sessions"
@@ -216,8 +337,8 @@ class RedactionTests(unittest.TestCase):
             _write_session(
                 sessions,
                 "pytest tests/unit/test_x.py -q",
-                {"config.py": f"{secret}\nprint('ok')\n"},
-                prompt=f"Fix auth. The leaked line was {secret}.",
+                {"config.py": f"{leaked}\nprint('ok')\n"},
+                prompt=f"Fix auth. The leaked line was {leaked}.",
             )
             minted = mint_tasks(sessions, out, 5)
             self.assertEqual(len(minted), 1)

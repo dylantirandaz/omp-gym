@@ -5,6 +5,14 @@ hidden state after every decoder layer. Each layer's hidden state
 is projected through the final norm and the (tied) embedding head
 to get that layer's prediction. The result shows how the model's
 next-token prediction forms layer by layer.
+
+The lens is a descriptive projection, not a causal explanation.
+Each layer's hidden state is read through the final layer's
+unembedding, a vantage point the intermediate layer never wrote
+for. A token appearing at layer k shows the projection already
+favors it there; it does not show that layer k caused the final
+prediction, and ablating the layer could change nothing or
+everything.
 """
 
 import json
@@ -29,9 +37,9 @@ def _layer_predictions(model, ids, top_k):
     """Capture per-layer hidden states and decode each into tokens."""
     inner = model.model
     h = inner.embed_tokens(ids)
-    mask = nn.MultiHeadAttention.create_additive_causal_mask(
-        ids.shape[1]
-    ).astype(h.dtype)
+    mask = nn.MultiHeadAttention.create_additive_causal_mask(ids.shape[1]).astype(
+        h.dtype
+    )
     per_layer = []
     for layer in inner.layers:
         h = layer(h, mask=mask, cache=None)
@@ -65,11 +73,9 @@ def run_lens(
     per_layer = _layer_predictions(model, ids, top_k)
     n_layers = len(per_layer)
     top_by_layer = []
-    for layer_index, top in enumerate(per_layer):
+    for top in per_layer:
         token_ids = top[0, -1, :].tolist()
-        top_by_layer.append(
-            [tokenizer.decode([int(t)]) for t in reversed(token_ids)]
-        )
+        top_by_layer.append([tokenizer.decode([int(t)]) for t in reversed(token_ids)])
     result = {
         "prompt": prompt,
         "model": model_id,

@@ -2,6 +2,9 @@
 
 The output files match the omp session schema, so the exporter and
 the clustering commands treat imported sessions like native ones.
+Every output file opens with a session header that stamps the
+source agent ("claude" or "codex"); a parsed trajectory reads it
+back as Trajectory.source.
 """
 
 import json
@@ -60,6 +63,8 @@ def _convert_claude(session_file: Path) -> ConvertedSession:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(record, dict):
+            continue
         if cwd is None and isinstance(record.get("cwd"), str):
             cwd = record["cwd"]
         if record.get("type") not in ("user", "assistant"):
@@ -86,9 +91,7 @@ def _convert_claude(session_file: Path) -> ConvertedSession:
                         "type": "toolCall",
                         "id": call_id,
                         "name": tool_names[call_id],
-                        "arguments": arguments
-                        if isinstance(arguments, dict)
-                        else {},
+                        "arguments": arguments if isinstance(arguments, dict) else {},
                     }
                 )
             elif block_type == "tool_result":
@@ -139,9 +142,7 @@ def _codex_output_text(output: object) -> str:
         return output
     if isinstance(output, list):
         return "\n".join(
-            str(part.get("text", ""))
-            for part in output
-            if isinstance(part, dict)
+            str(part.get("text", "")) for part in output if isinstance(part, dict)
         )
     if output is None:
         return ""
@@ -200,6 +201,8 @@ def _convert_codex(session_file: Path) -> ConvertedSession:
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
             continue
         payload = record.get("payload", {})
         if not isinstance(payload, dict):
@@ -291,14 +294,16 @@ def import_sessions(source: str, out_dir: Path) -> ImportStats:
         if not converted.entries:
             continue
         results_without_signal += converted.results_without_error_signal
-        lines = converted.entries
+        # Every imported session carries a header that names its
+        # source agent, so a parsed trajectory can tell an imported
+        # session from a native omp one. The cwd rides along when
+        # the source format records it.
+        header: dict[str, str] = {"type": "session", "source": source}
         if converted.cwd is None:
             sessions_without_cwd += 1
         else:
-            lines = [
-                json.dumps({"type": "session", "cwd": converted.cwd}),
-                *lines,
-            ]
+            header["cwd"] = converted.cwd
+        lines = [json.dumps(header), *converted.entries]
         target = target_root / f"{session_file.stem}.jsonl"
         target.write_text("\n".join(lines) + "\n")
         written += 1

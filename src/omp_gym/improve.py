@@ -15,8 +15,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from .isolation import fresh_home
 from .ledger import append_entry, read_ledger
-from .runner import _episode_environment, _kill_process_group
+from .runner import (
+    _configured_agent_model,
+    _episode_environment,
+    _kill_process_group,
+    _prepare_agent_home,
+)
 
 PROMPT_TEMPLATE = """You are the omp-gym operator. Read the skill at
 .agents/skills/omp-gym/SKILL.md first and follow it.
@@ -45,17 +51,25 @@ Rules:
 """
 
 # How often the harness recounts the ledger while the operator
-# runs. Tests shrink this to keep the kill fast.
-_POLL_SECONDS = 15.0
+# runs. run_improve takes it as the poll_seconds parameter; tests
+# shrink it to keep the kill fast.
+_DEFAULT_POLL_SECONDS = 5.0
 
 # Grace on top of max_time before the harness kills a session
 # whose own --max-time did not stop it.
 _TIMEOUT_GRACE_SECONDS = 120.0
 
 
-def _operator_command(prompt: str, max_time: int) -> list[str]:
-    """Build the operator omp invocation."""
-    return [
+def _operator_command(
+    prompt: str, max_time: int, model: str | None = None
+) -> list[str]:
+    """Build the operator omp invocation.
+
+    The model flag stays implicit unless the caller names one: an
+    omitted model means omp's own configured default runs, and the
+    harness only scopes credentials to match.
+    """
+    command = [
         "omp",
         "-p",
         prompt,
@@ -65,6 +79,9 @@ def _operator_command(prompt: str, max_time: int) -> list[str]:
         "--max-time",
         str(max_time),
     ]
+    if model is not None:
+        command.extend(["--model", model])
+    return command
 
 
 def _entries_since(ledger_path: Path, start_count: int) -> int:
@@ -90,8 +107,23 @@ def run_improve(
     budget: int,
     max_time: int,
     ledger_path: Path,
+    poll_seconds: float = _DEFAULT_POLL_SECONDS,
+    max_seconds: int | None = None,
+    model: str | None = None,
 ) -> ImproveResult:
-    """Run one bounded operator session and record it."""
+    """Run one bounded operator session and record it.
+
+    Two hard limits apply. The wall clock deadline is max_time
+    plus grace, tightened to max_seconds when that cap is given.
+    The verb budget kills the operator the moment the ledger holds
+    budget entries past the recorded start — at the limit, not
+    past it. Both limits land in the ledger entry config.
+
+    model names the operator's provider for credential scoping.
+    None resolves against the omp configuration copied into the
+    operator's fresh HOME; when nothing resolves, the child gets
+    no provider keys at all.
+    """
     stamp = time.strftime("%Y%m%d-%H%M%S")
     work_dir = Path("experiments") / f"improve-{stamp}"
     work_dir.mkdir(parents=True, exist_ok=False)
@@ -105,9 +137,21 @@ def run_improve(
     )
     (work_dir / "prompt.md").write_text(prompt)
 
-    command = _operator_command(prompt, max_time)
+    command = _operator_command(prompt, max_time, model=model)
+    # The operator HOME carries a copy of the omp configuration;
+    # its configured default model scopes the provider keys the
+    # child receives. Unresolved stays None, which names no
+    # provider keys at all.
+    operator_home = _prepare_agent_home(work_dir, model)
+    operator_model = model
+    if operator_model is None:
+        operator_model = _configured_agent_model(
+            operator_home / ".omp" / "agent" / "config.yml"
+        )
     started = time.monotonic()
     deadline = started + max_time + _TIMEOUT_GRACE_SECONDS
+    if max_seconds is not None:
+        deadline = min(deadline, started + max_seconds)
     timed_out = False
     budget_exceeded = False
     # The child gets the same whitelisted environment as an
@@ -118,12 +162,18 @@ def run_improve(
     #
     # A new session gives the operator its own process group, so
     # one killpg reaches omp and everything omp spawned.
-    process = subprocess.Popen(
+    process = subprocess.Popen(  # noqa: S603 - argv list, no shell
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        env=_episode_environment(os.environ, None),
+        env=_episode_environment(
+            os.environ,
+            None,
+            model=operator_model,
+            home=operator_home,
+            tmpdir=fresh_home(work_dir, "operator-tmp"),
+        ),
         start_new_session=True,
     )
     while True:
@@ -137,14 +187,12 @@ def run_improve(
             exit_code = -1
             break
         try:
-            stdout, stderr = process.communicate(
-                timeout=min(_POLL_SECONDS, remaining)
-            )
+            stdout, stderr = process.communicate(timeout=min(poll_seconds, remaining))
             exit_code = process.returncode
             break
         except subprocess.TimeoutExpired:
             pass
-        if _entries_since(ledger_path, len(entries_before)) > budget:
+        if _entries_since(ledger_path, len(entries_before)) >= budget:
             budget_exceeded = True
             _kill_process_group(process.pid)
             stdout, stderr = process.communicate()
@@ -168,7 +216,14 @@ def run_improve(
     append_entry(
         ledger_path,
         kind="improve",
-        config={"goal": goal, "budget": budget, "max_time": max_time},
+        config={
+            "goal": goal,
+            "budget": budget,
+            "max_time": max_time,
+            "poll_seconds": poll_seconds,
+            "max_seconds": max_seconds,
+            "model": operator_model,
+        },
         metrics={
             "exit_code": result.exit_code,
             "duration_seconds": result.duration_seconds,

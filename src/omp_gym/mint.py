@@ -10,11 +10,13 @@ the session's bash history.
 
 import json
 import re
+import shlex
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from .export import _redact
+from .task import ALLOWED_TEST_RUNNERS, TaskLoadError, load_task
 from .trajectory import (
     AssistantStep,
     ToolResultStep,
@@ -31,25 +33,31 @@ _TEST_COMMAND = re.compile(
     r"(?:^|\s)(pytest\b[^\n]*|python3?\s+test_\S+|npm\s+test[^\n]*"
     r"|cargo\s+test[^\n]*|go\s+test[^\n]*)"
 )
-_TEST_FAILED = re.compile(
-    r"\b(failed|FAILED|FAILURES|panic:|AssertionError)\b"
-)
+_TEST_FAILED = re.compile(r"\b(failed|FAILED|FAILURES|panic:|AssertionError)\b")
 
 
-_SHELL_METACHARACTERS = re.compile("[&|;`$<>()'\"]")
+_SHELL_OPERATORS = re.compile("[&|;`$<>()]")
 
 
 def _split_test_command(command: str) -> list[str] | None:
     """Split one captured test command into an argv list.
 
-    A shell metacharacter or a quote can smuggle one more command
-    into the line. The function rejects such a line. The result
-    runs without a shell.
+    shlex parses the line the way a shell would, so a quoted -k
+    selector survives as one clean argv item. Shell operators
+    (pipes, chaining, substitution, redirection, subshells) stay
+    rejected: without a shell they would run as literal argv text,
+    and a command that needs a shell is not a reproducible test.
+    An unbalanced quote makes shlex fail; the line is rejected.
     """
-    if _SHELL_METACHARACTERS.search(command) is not None:
+    try:
+        argv = shlex.split(command)
+    except ValueError:
         return None
-    argv = command.split()
-    return argv or None
+    if not argv:
+        return None
+    if any(_SHELL_OPERATORS.search(token) for token in argv):
+        return None
+    return argv
 
 
 def _has_selector(path: str) -> bool:
@@ -112,6 +120,8 @@ def _session_cwd(session_file: Path) -> Path | None:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(entry, dict):
+                continue
             cwd = entry.get("cwd")
             if isinstance(cwd, str):
                 return Path(cwd)
@@ -166,12 +176,8 @@ def _clean_read_payload(text: str) -> str | None:
         ):
             body = rest.lstrip()
     # Drop trailing truncation markers.
-    body = re.sub(
-        r"\n?\[Showing lines [^\]]+\]\s*$", "", body.rstrip()
-    )
-    body = re.sub(
-        r"\n?\[Read [^\]]+\]\s*$", "", body.rstrip()
-    )
+    body = re.sub(r"\n?\[Showing lines [^\]]+\]\s*$", "", body.rstrip())
+    body = re.sub(r"\n?\[Read [^\]]+\]\s*$", "", body.rstrip())
     # A structural summary or a truncated read is partial content.
     if re.search(r"^…|\[…\d+ln elided", body, re.MULTILINE):
         return None
@@ -224,6 +230,18 @@ def _scan_session(session_file: Path) -> dict | None:
                     if found is not None:
                         argv = _split_test_command(found.group(1).strip())
                         if argv is not None:
+                            runner = Path(argv[0]).name
+                            if runner not in ALLOWED_TEST_RUNNERS:
+                                # The task loader would reject this
+                                # runner, so the command cannot become
+                                # a task's test. Say so and move on.
+                                print(
+                                    f"mint: skipping test command "
+                                    f"{' '.join(argv)!r}: runner "
+                                    f"{runner!r} is not one of "
+                                    + ", ".join(sorted(ALLOWED_TEST_RUNNERS))
+                                )
+                                continue
                             # The last clean match is the command the
                             # session ended on, which matches the final
                             # file state.
@@ -248,22 +266,12 @@ def _scan_session(session_file: Path) -> dict | None:
                         and not _has_selector(path)
                         and not _is_secret_path(path)
                     ):
-                        pending_reads[call.call_id] = (
-                            _relative_write_path(path, cwd)
-                        )
+                        pending_reads[call.call_id] = _relative_write_path(path, cwd)
         elif isinstance(step, ToolResultStep):
             if step.tool_name == "read" and step.call_id in pending_reads:
                 rel = pending_reads[step.call_id]
-                cleaned = (
-                    None
-                    if step.is_error
-                    else _clean_read_payload(step.text)
-                )
-                if (
-                    cleaned is not None
-                    and rel not in reads
-                    and rel not in writes
-                ):
+                cleaned = None if step.is_error else _clean_read_payload(step.text)
+                if cleaned is not None and rel not in reads and rel not in writes:
                     reads[rel] = cleaned
                 if cleaned is not None:
                     latest[rel] = cleaned
@@ -314,9 +322,7 @@ def mint_tasks(
             target = (workspace_root / path).resolve()
             # A path with ".." or an absolute prefix can leave the
             # workspace. Such a path is skipped.
-            if target == workspace_root or not target.is_relative_to(
-                workspace_root
-            ):
+            if target == workspace_root or not target.is_relative_to(workspace_root):
                 continue
             if target.is_dir():
                 continue
@@ -325,9 +331,7 @@ def mint_tasks(
             # stays inside the workspace root.
             ancestor_file = None
             cursor = target.parent
-            while cursor != workspace_root and cursor.is_relative_to(
-                workspace_root
-            ):
+            while cursor != workspace_root and cursor.is_relative_to(workspace_root):
                 if cursor.is_file():
                     ancestor_file = cursor
                     break
@@ -363,10 +367,7 @@ def mint_tasks(
                     del argv[flag : flag + 2]
         command_text = " ".join(argv)
         prompt = _redact(
-            evidence["prompt"]
-            + "\n\nRun `"
-            + command_text
-            + "` to confirm the fix.\n"
+            evidence["prompt"] + "\n\nRun `" + command_text + "` to confirm the fix.\n"
         )
         fidelity = "partial"
         if test_target is not None and (
@@ -392,6 +393,13 @@ def mint_tasks(
                 )
             )
         )
+        # A minted task must be a task the runner can load. Validate
+        # what was just written; a failure is reported and the task
+        # is not emitted.
+        loaded = load_task(task_dir)
+        if isinstance(loaded, TaskLoadError):
+            print(f"mint: {name} failed validation: {loaded.reason}")
+            continue
         minted.append(
             MintedTask(
                 name=name,

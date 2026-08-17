@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import tempfile
 import types
@@ -8,6 +9,7 @@ from unittest import mock
 
 from omp_gym.export import (
     TASK_PROMPT_PREFIX,
+    CollectedTrajectory,
     _canonical_training_call,
     _collect_episode_messages,
     _collect_session_messages,
@@ -47,6 +49,13 @@ def _write_session(path: Path, user_text: str, assistant_text: str) -> None:
         + _session_line("assistant", assistant_text)
         + "\n"
     )
+
+
+def _call_payload(content: str) -> dict:
+    """Extract the JSON payload from the first tool_call envelope."""
+    match = re.search(r"<tool_call[^>]*>\n(.*)\n</tool_call>", content, re.DOTALL)
+    assert match is not None, content
+    return json.loads(match.group(1))
 
 
 class RedactionTests(unittest.TestCase):
@@ -99,13 +108,8 @@ class RedactionTests(unittest.TestCase):
         )
 
     def test_bearer_header_keeps_the_word_bearer(self) -> None:
-        header = (
-            "Authorization: Bearer "
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abcdefghij"
-        )
-        self.assertEqual(
-            _redact(header), "Authorization: Bearer [REDACTED]"
-        )
+        header = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abcdefghij"
+        self.assertEqual(_redact(header), "Authorization: Bearer [REDACTED]")
 
     def test_bearer_header_with_opaque_token(self) -> None:
         self.assertEqual(
@@ -155,7 +159,7 @@ class RedactionTests(unittest.TestCase):
 
 
 class CurriculumRenderingTests(unittest.TestCase):
-    def test_tool_turn_keeps_only_calls_and_relative_paths(self) -> None:
+    def test_tool_turn_keeps_prose_calls_ids_and_relative_paths(self) -> None:
         trajectory = Trajectory(
             steps=(
                 AssistantStep(
@@ -166,7 +170,7 @@ class CurriculumRenderingTests(unittest.TestCase):
                             call_id="call_1",
                             name="read",
                             arguments={
-                                "path": "/tmp/run/ws/src/main.py",
+                                "path": "/tmp/run/ws/src/main.py",  # noqa: S108
                                 "i": "Read source",
                             },
                         ),
@@ -179,10 +183,48 @@ class CurriculumRenderingTests(unittest.TestCase):
         messages = _render_messages(trajectory, TASK_PROMPT_PREFIX)
 
         assistant_content = messages[-1]["content"]
-        self.assertNotIn("I will inspect", assistant_content)
+        self.assertTrue(
+            assistant_content.startswith("I will inspect the file."),
+            assistant_content,
+        )
         self.assertNotIn("internal plan", assistant_content)
-        payload = json.loads(assistant_content)
+        self.assertIn('<tool_call id="call_1">', assistant_content)
+        payload = _call_payload(assistant_content)
         self.assertEqual(payload["arguments"]["path"], "src/main.py")
+
+    def test_tool_call_and_result_envelopes_share_the_call_id(self) -> None:
+        trajectory = Trajectory(
+            steps=(
+                AssistantStep(
+                    text="",
+                    tool_calls=(
+                        ToolCall(
+                            call_id="call_42",
+                            name="bash",
+                            arguments={"command": "python3 -m unittest"},
+                        ),
+                    ),
+                ),
+                ToolResultStep(
+                    call_id="call_42",
+                    tool_name="bash",
+                    text="OK",
+                    is_error=False,
+                ),
+            ),
+            torn_lines=0,
+        )
+
+        messages = _render_messages(trajectory, TASK_PROMPT_PREFIX)
+
+        assistant = next(m for m in messages if m["role"] == "assistant")["content"]
+        self.assertIn('<tool_call id="call_42">', assistant)
+        self.assertTrue(assistant.endswith("</tool_call>"))
+        result = messages[-1]["content"]
+        self.assertEqual(
+            result,
+            '<tool_response id="call_42">\nOK\n</tool_response>',
+        )
 
     def test_redacts_credentials_from_tool_results(self) -> None:
         trajectory = Trajectory(
@@ -243,7 +285,7 @@ class CurriculumRenderingTests(unittest.TestCase):
         self.assertEqual(messages[-1]["role"], "user")
         self.assertTrue(
             messages[-1]["content"].endswith(
-                "<tool_response>\nsource\n</tool_response>"
+                '<tool_response id="call_1">\nsource\n</tool_response>'
             )
         )
         self.assertNotIn("status=", messages[-1]["content"])
@@ -277,9 +319,10 @@ class CurriculumRenderingTests(unittest.TestCase):
 
         messages = _render_messages(trajectory, TASK_PROMPT_PREFIX)
 
-        self.assertEqual(messages[-1]["content"], "Use a valid patch.")
-        self.assertNotIn("invalid patch", json.dumps(messages))
-        self.assertNotIn("I will try", json.dumps(messages))
+        dumped = json.dumps(messages)
+        self.assertNotIn('<tool_call id="call_1"', dumped)
+        self.assertIn("I will try an invalid patch.", dumped)
+        self.assertIn("Use a valid patch.", dumped)
 
     def test_successful_edit_becomes_a_full_file_write(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -324,7 +367,7 @@ class CurriculumRenderingTests(unittest.TestCase):
         assistant_content = next(
             message["content"] for message in messages if message["role"] == "assistant"
         )
-        payload = json.loads(assistant_content)
+        payload = _call_payload(assistant_content)
         self.assertEqual(payload["name"], "write")
         self.assertEqual(
             payload["arguments"],
@@ -392,7 +435,7 @@ class CurriculumRenderingTests(unittest.TestCase):
             )
 
         payloads = [
-            json.loads(message["content"])
+            _call_payload(message["content"])
             for message in messages
             if message["role"] == "assistant"
         ]
@@ -400,9 +443,7 @@ class CurriculumRenderingTests(unittest.TestCase):
         self.assertEqual(payloads[0]["name"], "edit")
         self.assertEqual(payloads[0]["arguments"]["input"], first_patch)
         self.assertEqual(payloads[1]["name"], "write")
-        self.assertEqual(
-            payloads[1]["arguments"]["content"], "final = True\n"
-        )
+        self.assertEqual(payloads[1]["arguments"]["content"], "final = True\n")
 
     def test_write_after_edit_keeps_both_calls_as_written(self) -> None:
         patch = "[app.py#ABCD]\nPUT 1.=1:\n+draft = 1\n"
@@ -457,7 +498,7 @@ class CurriculumRenderingTests(unittest.TestCase):
             )
 
         payloads = [
-            json.loads(message["content"])
+            _call_payload(message["content"])
             for message in messages
             if message["role"] == "assistant"
         ]
@@ -465,16 +506,14 @@ class CurriculumRenderingTests(unittest.TestCase):
         self.assertEqual(payloads[0]["name"], "edit")
         self.assertEqual(payloads[0]["arguments"]["input"], patch)
         self.assertEqual(payloads[1]["name"], "write")
-        self.assertEqual(
-            payloads[1]["arguments"]["content"], "explicit = True\n"
-        )
+        self.assertEqual(payloads[1]["arguments"]["content"], "explicit = True\n")
 
     def test_legacy_edit_becomes_a_full_file_write(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             workspace = Path(temporary_directory)
             (workspace / "app.py").write_text("answer = 42\n")
 
-            name, arguments = _canonical_training_call(
+            name, arguments, skipped = _canonical_training_call(
                 ToolCall(
                     call_id="call_1",
                     name="edit",
@@ -488,6 +527,7 @@ class CurriculumRenderingTests(unittest.TestCase):
             )
 
         self.assertEqual(name, "write")
+        self.assertFalse(skipped)
         self.assertEqual(arguments["path"], "app.py")
         self.assertEqual(arguments["content"], "answer = 42\n")
 
@@ -543,6 +583,7 @@ class HoldoutExclusionTests(unittest.TestCase):
                 excluded,
                 excluded_content,
                 torn,
+                quarantined,
             ) = _collect_session_messages(sessions, min_quality=False)
 
         self.assertEqual(seen, 2)
@@ -551,14 +592,17 @@ class HoldoutExclusionTests(unittest.TestCase):
         self.assertEqual(torn, 0)
         self.assertEqual(excluded_content, 0)
         self.assertEqual(len(rendered), 1)
-        self.assertNotIn("holdout-tasks", json.dumps(rendered))
+        self.assertNotIn(
+            "holdout-tasks",
+            json.dumps([t.messages for t in rendered]),
+        )
 
 
-def _write_episode(runs: Path, sessions: Path, name: str, task: str) -> None:
+def _write_episode(runs: Path, name: str, task: str) -> None:
     """Write one graded episode record with a minimal session."""
     episode_dir = runs / name
     episode_dir.mkdir(parents=True)
-    session_file = sessions / f"{name}.jsonl"
+    session_file = episode_dir / "session.jsonl"
     _write_session(session_file, "Fix the bug.", "The bug is fixed.")
     (episode_dir / "episode.json").write_text(
         json.dumps(
@@ -581,16 +625,21 @@ class EpisodeHoldoutExclusionTests(unittest.TestCase):
             sessions.mkdir()
             holdout = root / "holdout-tasks"
             (holdout / "interval-union").mkdir(parents=True)
-            _write_episode(runs, sessions, "ep-1", "interval-union")
-            _write_episode(runs, sessions, "ep-2", "parser-fix")
+            _write_episode(runs, "ep-1", "interval-union")
+            _write_episode(runs, "ep-2", "parser-fix")
 
-            rendered, seen, excluded, torn = _collect_episode_messages(
-                runs, 0.0, holdout
-            )
+            (
+                rendered,
+                seen,
+                excluded,
+                torn,
+                quarantined,
+            ) = _collect_episode_messages(runs, 0.0, holdout)
 
         self.assertEqual(seen, 2)
         self.assertEqual(excluded, 1)
         self.assertEqual(torn, 0)
+        self.assertEqual(quarantined, 0)
         self.assertEqual(len(rendered), 1)
 
     def test_missing_holdout_dir_means_no_exclusion(self) -> None:
@@ -599,15 +648,20 @@ class EpisodeHoldoutExclusionTests(unittest.TestCase):
             runs = root / "runs"
             sessions = root / "sessions"
             sessions.mkdir()
-            _write_episode(runs, sessions, "ep-1", "interval-union")
+            _write_episode(runs, "ep-1", "interval-union")
 
-            rendered, seen, excluded, torn = _collect_episode_messages(
-                runs, 0.0, root / "holdout-tasks"
-            )
+            (
+                rendered,
+                seen,
+                excluded,
+                torn,
+                quarantined,
+            ) = _collect_episode_messages(runs, 0.0, root / "holdout-tasks")
 
         self.assertEqual(seen, 1)
         self.assertEqual(excluded, 0)
         self.assertEqual(torn, 0)
+        self.assertEqual(quarantined, 0)
         self.assertEqual(len(rendered), 1)
 
     def test_export_dataset_counts_the_exclusion(self) -> None:
@@ -621,8 +675,8 @@ class EpisodeHoldoutExclusionTests(unittest.TestCase):
             sessions.mkdir()
             holdout = root / "holdout-tasks"
             (holdout / "interval-union").mkdir(parents=True)
-            _write_episode(runs, sessions, "ep-1", "interval-union")
-            _write_episode(runs, sessions, "ep-2", "parser-fix")
+            _write_episode(runs, "ep-1", "interval-union")
+            _write_episode(runs, "ep-2", "parser-fix")
 
             with mock.patch(
                 "omp_gym.export.load_token_counter",
@@ -713,7 +767,7 @@ class OptInHarvestTests(unittest.TestCase):
             runs = root / "runs"
             sessions = root / "sessions"
             sessions.mkdir()
-            _write_episode(runs, sessions, "ep-1", "parser-fix")
+            _write_episode(runs, "ep-1", "parser-fix")
             _write_session(
                 sessions / "personal.jsonl",
                 "Fix my private repository.",
@@ -764,7 +818,7 @@ class HoldoutFingerprintTests(unittest.TestCase):
             _write_holdout_test(holdout)
             episode_dir = runs / "ep-renamed"
             episode_dir.mkdir(parents=True)
-            session_file = sessions / "ep-renamed.jsonl"
+            session_file = episode_dir / "session.jsonl"
             _write_session(
                 session_file,
                 "Fix the renamed task.",
@@ -780,16 +834,24 @@ class HoldoutFingerprintTests(unittest.TestCase):
                     }
                 )
             )
-            _write_episode(runs, sessions, "ep-clean", "parser-fix")
+            _write_episode(runs, "ep-clean", "parser-fix")
 
-            rendered, seen, excluded, torn = _collect_episode_messages(
-                runs, 0.0, holdout
-            )
+            (
+                rendered,
+                seen,
+                excluded,
+                torn,
+                quarantined,
+            ) = _collect_episode_messages(runs, 0.0, holdout)
 
         self.assertEqual(seen, 2)
         self.assertEqual(excluded, 1)
+        self.assertEqual(quarantined, 0)
         self.assertEqual(len(rendered), 1)
-        self.assertNotIn(_FINGERPRINT_LINE, json.dumps(rendered))
+        self.assertNotIn(
+            _FINGERPRINT_LINE,
+            json.dumps([t.messages for t in rendered]),
+        )
 
     def test_session_with_holdout_line_counts_as_content(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -816,6 +878,7 @@ class HoldoutFingerprintTests(unittest.TestCase):
                 excluded_holdout,
                 excluded_content,
                 torn,
+                quarantined,
             ) = _collect_session_messages(
                 sessions, min_quality=False, holdout_dir=holdout
             )
@@ -873,15 +936,11 @@ def _fake_transformers() -> types.SimpleNamespace:
             self.input_ids = list(range(len(text) // 4 + 1))
 
     class _Tokenizer:
-        def __call__(
-            self, text: str, add_special_tokens: bool = False
-        ) -> "_Tokenized":
+        def __call__(self, text: str, add_special_tokens: bool = False) -> "_Tokenized":
             return _Tokenized(text)
 
     return types.SimpleNamespace(
-        AutoTokenizer=types.SimpleNamespace(
-            from_pretrained=lambda _: _Tokenizer()
-        )
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda _: _Tokenizer())
     )
 
 
@@ -897,7 +956,7 @@ class PairTaskSplitTests(unittest.TestCase):
                     name = f"{task}-{verdict}"
                     episode_dir = runs / name
                     episode_dir.mkdir(parents=True)
-                    session_file = sessions / f"{name}.jsonl"
+                    session_file = episode_dir / "session.jsonl"
                     _write_session(
                         session_file,
                         f"Do {task}.",
@@ -914,9 +973,7 @@ class PairTaskSplitTests(unittest.TestCase):
                         )
                     )
 
-            with mock.patch.dict(
-                sys.modules, {"transformers": _fake_transformers()}
-            ):
+            with mock.patch.dict(sys.modules, {"transformers": _fake_transformers()}):
                 stats = export_pairs(
                     runs,
                     root / "out",
@@ -943,15 +1000,11 @@ class PairTaskSplitTests(unittest.TestCase):
 
 
 class DatasetLeakScanTests(unittest.TestCase):
-    def _write_scored_episode(
-        self, root: Path, name: str, assistant_text: str
-    ) -> None:
+    def _write_scored_episode(self, root: Path, name: str, assistant_text: str) -> None:
         episode_dir = root / "runs" / name
         episode_dir.mkdir(parents=True)
-        session_file = root / "sessions" / f"{name}.jsonl"
-        _write_session(
-            session_file, "Solve the interval task.", assistant_text
-        )
+        session_file = episode_dir / "session.jsonl"
+        _write_session(session_file, "Solve the interval task.", assistant_text)
         (episode_dir / "episode.json").write_text(
             json.dumps(
                 {
@@ -978,26 +1031,26 @@ class DatasetLeakScanTests(unittest.TestCase):
                 holdout_dir=root / "holdout-tasks",
             )
 
-    def test_rewrapped_fingerprint_in_written_file_raises(self) -> None:
+    def test_rewrapped_fingerprint_is_excluded_before_write(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            (root / "sessions").mkdir()
-            _write_holdout_test(root / "holdout-tasks")
+            holdout = root / "holdout-tasks"
+            _write_holdout_test(holdout)
             wrapped = _FINGERPRINT_LINE.replace(" == ", "\n== ")
             self.assertNotIn(_FINGERPRINT_LINE, wrapped)
             self._write_scored_episode(root, "leaky", "Done:\n" + wrapped)
 
-            with self.assertRaises(SystemExit) as caught:
-                self._export(root)
+            _, seen, excluded, _, quarantined = _collect_episode_messages(
+                root / "runs", 1.0, holdout
+            )
 
-        message = str(caught.exception)
-        self.assertIn("train.jsonl", message)
-        self.assertIn("union_intervals", message)
+        self.assertEqual(seen, 1)
+        self.assertEqual(excluded, 1)
+        self.assertEqual(quarantined, 0)
 
     def test_clean_export_reports_zero_fingerprint_hits(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            (root / "sessions").mkdir()
             _write_holdout_test(root / "holdout-tasks")
             self._write_scored_episode(root, "clean", "The bug is fixed.")
 
@@ -1005,6 +1058,53 @@ class DatasetLeakScanTests(unittest.TestCase):
 
         self.assertEqual(stats.dataset_fingerprint_hits, 0)
         self.assertEqual(stats.train_samples, 1)
+
+    def test_scan_failure_leaves_no_partial_dataset(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            holdout = root / "holdout-tasks"
+            _write_holdout_test(holdout)
+            leaky = CollectedTrajectory(
+                messages=[
+                    {"role": "system", "content": "S"},
+                    {"role": "user", "content": "Solve it."},
+                    {
+                        "role": "assistant",
+                        "content": "Done: " + _FINGERPRINT_LINE,
+                    },
+                ],
+                provenance={"session": "leaky", "task": "leaky"},
+                redacted=0,
+                binary_skipped=0,
+                torn_lines=0,
+            )
+            with (
+                mock.patch(
+                    "omp_gym.export.load_token_counter",
+                    return_value=_token_counter,
+                ),
+                mock.patch(
+                    "omp_gym.export._collect_episode_messages",
+                    return_value=([leaky], 1, 0, 0, 0),
+                ),
+            ):
+                with self.assertRaises(SystemExit) as caught:
+                    export_dataset(
+                        root / "runs",
+                        None,
+                        root / "out",
+                        1.0,
+                        "any-tokenizer",
+                        2048,
+                        holdout_dir=holdout,
+                    )
+
+        self.assertIn("train.jsonl", str(caught.exception))
+        self.assertIn("union_intervals", str(caught.exception))
+        out = root / "out"
+        self.assertFalse((out / "train.jsonl").exists())
+        self.assertFalse((out / "valid.jsonl").exists())
+        self.assertFalse((out / "manifest.json").exists())
 
 
 def _write_pair_episode(
@@ -1017,7 +1117,7 @@ def _write_pair_episode(
     """Write one scored episode with alternating user/assistant turns."""
     episode_dir = root / "runs" / name
     episode_dir.mkdir(parents=True)
-    session_file = root / "sessions" / f"{name}.jsonl"
+    session_file = episode_dir / "session.jsonl"
     lines = [_session_line("user", f"Do {task}.")]
     for turn, text in enumerate(assistant_turns):
         lines.append(_session_line("assistant", text))
@@ -1038,9 +1138,7 @@ def _write_pair_episode(
 
 class PairDivergenceTests(unittest.TestCase):
     def _export(self, root: Path):
-        with mock.patch.dict(
-            sys.modules, {"transformers": _fake_transformers()}
-        ):
+        with mock.patch.dict(sys.modules, {"transformers": _fake_transformers()}):
             return export_pairs(
                 root / "runs",
                 root / "out",
@@ -1054,18 +1152,22 @@ class PairDivergenceTests(unittest.TestCase):
             root = Path(temporary_directory)
             (root / "sessions").mkdir()
             _write_pair_episode(
-                root, "win", "fix-parser", 1.0,
+                root,
+                "win",
+                "fix-parser",
+                1.0,
                 ["turn one shared", "turn two win"],
             )
             _write_pair_episode(
-                root, "loss", "fix-parser", 0.0,
+                root,
+                "loss",
+                "fix-parser",
+                0.0,
                 ["turn one shared", "turn two loss"],
             )
 
             stats = self._export(root)
-            train_lines = (
-                (root / "out" / "train.jsonl").read_text().splitlines()
-            )
+            train_lines = (root / "out" / "train.jsonl").read_text().splitlines()
 
         self.assertEqual(stats.pairs_written, 1)
         self.assertEqual(stats.pairs_skipped_identical, 0)
