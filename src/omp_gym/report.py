@@ -9,6 +9,7 @@ recorded runs.
 from dataclasses import dataclass
 from pathlib import Path
 
+from .bench import wilson_interval
 from .ledger import LedgerEntry, read_ledger
 
 
@@ -23,6 +24,8 @@ class ModelStats:
     mean_tokens: float
     tokens_per_solve: float | None
     cost_per_pass: float | None
+    low: float = 0.0
+    high: float = 1.0
 
 
 def _model_stats(entries: list[LedgerEntry]) -> list[ModelStats]:
@@ -31,6 +34,9 @@ def _model_stats(entries: list[LedgerEntry]) -> list[ModelStats]:
     Every bench row counts as one run. An error row is a scheduled
     episode that did not succeed, so it stays in the run count and
     lowers the pass rate. Cost sums the rows that carry a cost.
+    The low/high fields hold the 95% Wilson interval of the pass
+    rate, and models sort by its lower bound: a lucky 1/1 must not
+    outrank a solid 9/10.
     """
     rows: list[dict[str, object]] = []
     for entry in entries:
@@ -46,6 +52,7 @@ def _model_stats(entries: list[LedgerEntry]) -> list[ModelStats]:
     stats: list[ModelStats] = []
     for model, model_rows in sorted(by_model.items()):
         passes = sum(1 for row in model_rows if row["reward"] >= 1.0)
+        low, high = wilson_interval(passes, len(model_rows))
         cost = sum(
             float(row["cost_usd"])
             for row in model_rows
@@ -70,9 +77,11 @@ def _model_stats(entries: list[LedgerEntry]) -> list[ModelStats]:
                     else None
                 ),
                 cost_per_pass=(cost / passes if passes else None),
+                low=low,
+                high=high,
             )
         )
-    stats.sort(key=lambda s: (-s.passes / s.runs, s.mean_tokens))
+    stats.sort(key=lambda s: (-s.low, s.mean_tokens))
     return stats
 
 
@@ -125,7 +134,11 @@ def render_report(entries: list[LedgerEntry]) -> str:
         )
         lines.append("| --- | --- | --- | --- | --- | --- |")
         for stat in stats:
-            rate = f"{stat.passes / stat.runs:.0%} ({stat.passes}/{stat.runs})"
+            rate = (
+                f"{stat.passes / stat.runs:.0%} "
+                f"[{stat.low:.0%}, {stat.high:.0%}] "
+                f"({stat.passes}/{stat.runs})"
+            )
             cpp = (
                 f"${stat.cost_per_pass:.4f}"
                 if stat.cost_per_pass is not None

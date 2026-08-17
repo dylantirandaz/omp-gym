@@ -11,12 +11,18 @@ import json
 import time
 from pathlib import Path
 
-import mlx.core as mx
-import mlx.nn as nn
-from mlx.optimizers import Adam
-from mlx.utils import tree_flatten
-from mlx_lm import load
-from mlx_lm.tuner.utils import linear_to_lora_layers
+try:
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx.optimizers import Adam
+    from mlx.utils import tree_flatten
+    from mlx_lm import load
+    from mlx_lm.tuner.utils import linear_to_lora_layers
+except ModuleNotFoundError:
+    # Off-Mac machines have no mlx. The pure helpers and the
+    # constants stay importable; train_dpo fails at load time.
+    mx = nn = Adam = tree_flatten = None
+    load = linear_to_lora_layers = None
 
 DPO_BETA = 0.1
 LORA_CONFIG = {"rank": 8, "scale": 20.0, "dropout": 0.0}
@@ -62,11 +68,12 @@ def _load_pairs(data_dir: Path, model_id: str):
             if not line.strip():
                 continue
             record = json.loads(line)
+            prompt_messages = record.get("messages") or [
+                {"role": "system", "content": record["system"]},
+                {"role": "user", "content": record["prompt"]},
+            ]
             templated = tokenizer.apply_chat_template(
-                [
-                    {"role": "system", "content": record["system"]},
-                    {"role": "user", "content": record["prompt"]},
-                ],
+                prompt_messages,
                 add_generation_prompt=True,
                 tokenize=True,
             )
@@ -93,6 +100,21 @@ def _load_pairs(data_dir: Path, model_id: str):
     return tokenize(data_dir / "train.jsonl"), tokenize(
         data_dir / "valid.jsonl"
     )
+
+
+def _pad_length(pairs) -> int:
+    """One fixed padded length for every loss input.
+
+    MLX compiles one graph per input shape. Shape-varying inputs
+    would pay one compilation per pair, so every sequence pads to
+    the longest pair, rounded up to a multiple of 128.
+    """
+    longest = max(
+        len(prompt) + max(len(chosen), len(rejected))
+        for prompt, chosen, rejected in pairs
+    )
+    return ((longest + 127) // 128) * 128
+
 
 
 def _dpo_loss(policy, batch, ref_lps, beta, pad_to):
@@ -137,11 +159,7 @@ def train_dpo(
     if len(train_pairs) < 2:
         raise DpoError("need at least two training pairs")
 
-    longest = max(
-        len(prompt) + max(len(chosen), len(rejected))
-        for prompt, chosen, rejected in train_pairs + valid_pairs
-    )
-    pad_to = ((longest + 127) // 128) * 128
+    pad_to = _pad_length(train_pairs + valid_pairs)
     if pad_to > 4096:
         raise DpoError(
             f"longest pair needs {pad_to} padded tokens; "

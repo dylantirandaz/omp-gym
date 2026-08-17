@@ -7,8 +7,6 @@ Preflight success is not proof that training works.
 
 from dataclasses import dataclass
 
-import mlx.core as mx
-
 
 @dataclass(frozen=True)
 class GpuReport:
@@ -32,7 +30,16 @@ def require_metal_gpu() -> GpuReport:
 
     The check runs one matrix product on the GPU and validates the
     result. A wrong device or a wrong result stops the program.
+    The mlx import is local so that machines without mlx can
+    import this module; they fail here, at the gate.
     """
+    try:
+        import mlx.core as mx
+    except ModuleNotFoundError as error:
+        raise PreflightError(
+            "mlx is not installed; training needs Apple silicon"
+        ) from error
+
     device = mx.default_device()
     if device.type != mx.DeviceType.gpu:
         raise PreflightError(

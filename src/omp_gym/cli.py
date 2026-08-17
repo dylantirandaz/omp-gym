@@ -588,7 +588,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="comma-separated omp model names",
     )
     bench_parser.add_argument("--tasks", type=Path, default=Path("tasks"))
-    bench_parser.add_argument("--trials", type=int, default=1)
+    bench_parser.add_argument(
+        "--trials",
+        type=int,
+        default=3,
+        help="episodes per model x task cell; 3 gives the Wilson "
+        "interval something to work with",
+    )
     bench_parser.add_argument("--runs", type=Path, default=Path("runs"))
     bench_parser.add_argument(
         "--report", type=Path, default=Path("bench-report.md")

@@ -23,6 +23,7 @@ class TaskSpec:
     max_time: str
     workspace: Path
     context_files: tuple[str, ...] = ()
+    expected_cases: int | None = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,15 @@ def load_task(task_dir: Path) -> TaskSpec | TaskLoadError:
         return TaskLoadError(
             task_dir, "max_time must be a positive integer of seconds"
         )
+    expected_cases = raw.get("expected_cases")
+    if expected_cases is not None and (
+        isinstance(expected_cases, bool)
+        or not isinstance(expected_cases, int)
+        or expected_cases <= 0
+    ):
+        return TaskLoadError(
+            task_dir, "expected_cases must be a positive integer"
+        )
 
     return TaskSpec(
         name=task_dir.name,
@@ -97,5 +107,6 @@ def load_task(task_dir: Path) -> TaskSpec | TaskLoadError:
         tools=tools,
         max_time=max_time,
         context_files=tuple(context_files),
+        expected_cases=expected_cases,
         workspace=workspace,
     )

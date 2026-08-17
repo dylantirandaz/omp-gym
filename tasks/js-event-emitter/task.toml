@@ -1,0 +1,12 @@
+prompt = """
+Implement the four registry helpers in listeners.mjs and the Emitter
+methods in emitter.mjs so that test_emitter.mjs passes. The header
+comments state the exact rules for snapshots, unsubscribe identity,
+once entries, and reentrant emits. Both modules need work; a change
+to only one file cannot pass. Do not change the test file. Run
+`node test_emitter.mjs` to confirm that all tests pass.
+"""
+test_command = ["node", "test_emitter.mjs"]
+context_files = ["listeners.mjs", "emitter.mjs", "test_emitter.mjs"]
+tools = "read,write,bash"
+max_time = "300"

@@ -32,6 +32,26 @@ class ValidateLossCurvesTests(unittest.TestCase):
     def test_accepts_a_run_without_val_losses(self) -> None:
         _validate_loss_curves([2.0, 1.0], [])
 
+    def test_flags_the_observed_memorization_run(self) -> None:
+        # Measured run: train 2.058 -> 1.404 (-31.8%) while val
+        # only moved 2.151 -> 2.001 (-7.0%).
+        with self.assertRaises(TrainError) as caught:
+            _validate_loss_curves(
+                [2.058, 1.404], [2.151, 2.001]
+            )
+        message = str(caught.exception)
+        self.assertIn("memorization-shaped", message)
+        self.assertIn("31.8%", message)
+        self.assertIn("7.0%", message)
+
+    def test_accepts_a_balanced_run(self) -> None:
+        # Train -30% with val -25% is healthy generalization.
+        _validate_loss_curves([2.0, 1.4], [2.0, 1.5])
+
+    def test_accepts_a_small_train_drop_with_flat_val(self) -> None:
+        # A 10% train drop is below the 15% bar; flat val passes.
+        _validate_loss_curves([2.0, 1.8], [2.0, 2.0])
+
     def test_rejects_a_run_with_no_loss_reports(self) -> None:
         with self.assertRaises(TrainError) as caught:
             _validate_loss_curves([1.0], [])

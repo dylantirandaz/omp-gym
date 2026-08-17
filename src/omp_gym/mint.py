@@ -77,6 +77,21 @@ def _scrub_home(text: str) -> str:
     return text.replace(str(Path.home()), "~")
 
 
+def _source_label(session_file: Path, sessions_root: Path) -> str:
+    """Name the source session relative to the sessions root.
+
+    The absolute path above the sessions root is machine private
+    (home directory, `.omp/agent` layout) and must not appear in
+    minted files. A session outside the root keeps its own path;
+    the home scrub still covers that fallback.
+    """
+    try:
+        relative = session_file.relative_to(sessions_root)
+    except ValueError:
+        return str(session_file)
+    return str(Path("sessions") / relative)
+
+
 @dataclass(frozen=True)
 class MintedTask:
     """One task minted from a failed session."""
@@ -371,7 +386,8 @@ def mint_tasks(
         (task_dir / "SOURCE.md").write_text(
             _scrub_home(
                 _redact(
-                    f"source session: {session_file}\n"
+                    "source session: "
+                    f"{_source_label(session_file, sessions_root)}\n"
                     f"failure signals: {evidence['signals']}\n"
                 )
             )

@@ -18,12 +18,18 @@ from dataclasses import dataclass
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-import mlx.core as mx
-import mlx.nn as nn
-from mlx.optimizers import Adam
-from mlx.utils import tree_flatten
-from mlx_lm import load
-from mlx_lm.tuner.utils import linear_to_lora_layers
+try:
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx.optimizers import Adam
+    from mlx.utils import tree_flatten
+    from mlx_lm import load
+    from mlx_lm.tuner.utils import linear_to_lora_layers
+except ModuleNotFoundError:
+    # Off-Mac machines have no mlx. The pure helpers stay
+    # importable; run_rl fails at preflight.
+    mx = nn = Adam = tree_flatten = None
+    load = linear_to_lora_layers = None
 
 from . import serve as serve_mod
 from . import shim as shim_mod
@@ -41,6 +47,13 @@ class RlError(SystemExit):
         super().__init__(f"rl failed: {reason}")
 
 
+# The floor for the mean completion length, as a fraction of the
+# first iteration's mean. A policy that collapses to near-empty
+# completions still collects partial rewards, so reward curves do
+# not show the failure; length does.
+COMPLETION_COLLAPSE_RATIO = 0.3
+
+
 @dataclass(frozen=True)
 class IterationMetrics:
     """One iteration of grouped episodes and one update."""
@@ -48,6 +61,7 @@ class IterationMetrics:
     iteration: int
     rewards: tuple[float, ...]
     mean_reward: float
+    mean_completion_length: float
     loss: float | None
 
 
@@ -57,6 +71,40 @@ def _validate_parameters(group_size: int, iterations: int) -> None:
         raise RlError("group size must be at least 2")
     if iterations < 1:
         raise RlError("iterations must be at least 1")
+
+
+def _normalized_advantages(rewards: list[float]) -> list[float]:
+    """Group-mean baseline advantages, scaled by the group std.
+
+    A zero standard deviation would divide by zero; the divisor
+    falls back to 1.0, which makes every advantage zero when all
+    rewards are equal.
+    """
+    mean_reward = sum(rewards) / len(rewards)
+    variance = sum(
+        (reward - mean_reward) ** 2 for reward in rewards
+    ) / len(rewards)
+    group_std = variance**0.5
+    if group_std == 0.0:
+        group_std = 1.0
+    return [
+        (reward - mean_reward) / group_std for reward in rewards
+    ]
+
+
+def _completion_length_collapsed(
+    first_mean: float | None, current_mean: float
+) -> bool:
+    """Decide the early stop for completion-length collapse.
+
+    The first iteration sets the reference, so it can never
+    collapse against itself (first_mean is None). A zero or
+    negative reference gives no meaningful floor and disables
+    the check.
+    """
+    if first_mean is None or first_mean <= 0.0:
+        return False
+    return current_mean < COMPLETION_COLLAPSE_RATIO * first_mean
 
 
 def _start_policy_server(
@@ -249,6 +297,9 @@ def run_rl(
 
     optimizer = Adam(learning_rate=5e-6)
     rounds: list[IterationMetrics] = []
+    first_mean_length: float | None = None
+    stopped_early = False
+    stop_reason: str | None = None
     started = time.monotonic()
 
     for iteration in range(1, iterations + 1):
@@ -342,6 +393,31 @@ def run_rl(
                 f"iteration {iteration}: fewer than 2 usable rollouts"
             )
 
+        mean_length = sum(
+            len(completion) for _, completion in completions
+        ) / len(completions)
+        if _completion_length_collapsed(first_mean_length, mean_length):
+            rounds.append(
+                IterationMetrics(
+                    iteration=iteration,
+                    rewards=tuple(rewards),
+                    mean_reward=sum(rewards) / len(rewards),
+                    mean_completion_length=mean_length,
+                    loss=None,
+                )
+            )
+            stopped_early = True
+            stop_reason = "completion length collapse"
+            print(
+                f"iteration {iteration}: mean completion length "
+                f"{mean_length:.1f} fell below "
+                f"{COMPLETION_COLLAPSE_RATIO:.0%} of the first "
+                f"iteration's {first_mean_length:.1f}; stopping early"
+            )
+            break
+        if first_mean_length is None:
+            first_mean_length = mean_length
+
         mean_reward = sum(rewards) / len(rewards)
         has_reward_variance = any(
             reward != rewards[0] for reward in rewards[1:]
@@ -357,21 +433,14 @@ def run_rl(
                     iteration=iteration,
                     rewards=tuple(rewards),
                     mean_reward=mean_reward,
+                    mean_completion_length=mean_length,
                     loss=None,
                 )
             )
             print("no group variance; no update this iteration")
             continue
 
-        variance = sum(
-            (reward - mean_reward) ** 2 for reward in rewards
-        ) / len(rewards)
-        group_std = variance**0.5
-        if group_std == 0.0:
-            group_std = 1.0
-        advantages = [
-            (reward - mean_reward) / group_std for reward in rewards
-        ]
+        advantages = _normalized_advantages(rewards)
 
         longest = max(
             len(p) + len(c) for p, c in completions
@@ -423,6 +492,7 @@ def run_rl(
                 iteration=iteration,
                 rewards=tuple(rewards),
                 mean_reward=mean_reward,
+                mean_completion_length=mean_length,
                 loss=value,
             )
         )
@@ -435,11 +505,14 @@ def run_rl(
         "group_size": group_size,
         "iterations": iterations,
         "updates": updates,
+        "stopped_early": stopped_early,
+        "stop_reason": stop_reason,
         "rounds": [
             {
                 "iteration": r.iteration,
                 "rewards": list(r.rewards),
                 "mean_reward": r.mean_reward,
+                "mean_completion_length": r.mean_completion_length,
                 "loss": r.loss,
             }
             for r in rounds

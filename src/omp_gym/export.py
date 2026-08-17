@@ -158,6 +158,7 @@ class ExportStats:
     train_samples: int
     valid_samples: int
     sessions_excluded_holdout_content: int
+    dataset_fingerprint_hits: int = 0
 
 
 def _elide_middle(text: str, limit: int) -> str:
@@ -448,6 +449,66 @@ def _holdout_fingerprints(holdout_dir: Path) -> frozenset[str]:
     return frozenset(fingerprints)
 
 
+def _squash(text: str) -> str:
+    """Drop all whitespace so re-wrapped text still matches."""
+    return "".join(text.split())
+
+
+def _string_leaves(value: object) -> list[str]:
+    """Every string inside one decoded JSON document."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [
+            leaf
+            for child in value.values()
+            for leaf in _string_leaves(child)
+        ]
+    if isinstance(value, list):
+        return [leaf for child in value for leaf in _string_leaves(child)]
+    return []
+
+
+def _scan_written_dataset(
+    out_dir: Path,
+    fingerprints: frozenset[str],
+) -> int:
+    """Re-read the written files and fail on any holdout fingerprint.
+
+    The exclusion filters run on rendered text before writing; this
+    scan re-opens exactly what training will read. Matching drops
+    all whitespace on both sides and also checks decoded JSON
+    strings, so a fingerprint that rendering re-wrapped or JSON
+    escaping disguised still hits. The bias is toward false
+    positives: a dropped sample costs nothing, a leaked holdout
+    line poisons the benchmark. Returns 0; any hit raises
+    SystemExit naming the file and the fingerprint.
+    """
+    needles = {
+        fingerprint: _squash(fingerprint) for fingerprint in fingerprints
+    }
+    for name in ("train.jsonl", "valid.jsonl"):
+        path = out_dir / name
+        if not path.is_file():
+            continue
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if not line.strip():
+                continue
+            parts = [line]
+            try:
+                parts.extend(_string_leaves(json.loads(line)))
+            except json.JSONDecodeError:
+                pass
+            haystacks = [_squash(part) for part in parts]
+            for fingerprint, needle in needles.items():
+                if any(needle in haystack for haystack in haystacks):
+                    raise SystemExit(
+                        f"holdout fingerprint leaked into {path} "
+                        f"line {number}: {fingerprint!r}"
+                    )
+    return 0
+
+
 def _collect_episode_messages(
     runs_dir: Path,
     min_reward: float,
@@ -588,6 +649,7 @@ class PairStats:
     tasks_paired: int
     pairs_written: int
     pairs_skipped_oversize: int
+    pairs_skipped_identical: int = 0
 
 
 def _episode_qualifies_as_loss(session_file: Path) -> bool:
@@ -607,13 +669,33 @@ def _episode_qualifies_as_loss(session_file: Path) -> bool:
     return True
 
 
-def _first_assistant_content(
-    messages: list[dict[str, str]],
-) -> str | None:
-    """Return the first assistant message content, if any."""
-    for message in messages:
-        if message["role"] == "assistant":
-            return message["content"]
+def _first_divergence(
+    win_messages: list[dict[str, str]],
+    loss_messages: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], str, str] | None:
+    """Shared prefix plus the first differing assistant turns.
+
+    Assistant turns align by index across the two renderings. The
+    first index whose contents differ yields the pair; the prompt
+    is everything before the win's divergent turn. Trajectories
+    that agree at every compared index yield None: such a pair
+    would teach the model to prefer a turn over itself.
+    """
+    win_turns = [
+        at
+        for at, message in enumerate(win_messages)
+        if message["role"] == "assistant"
+    ]
+    loss_turns = [
+        at
+        for at, message in enumerate(loss_messages)
+        if message["role"] == "assistant"
+    ]
+    for win_at, loss_at in zip(win_turns, loss_turns):
+        chosen = win_messages[win_at]["content"]
+        rejected = loss_messages[loss_at]["content"]
+        if chosen != rejected:
+            return win_messages[:win_at], chosen, rejected
     return None
 
 
@@ -627,12 +709,16 @@ def export_pairs(
     """Build DPO preference pairs from scored episodes.
 
     For each task with at least one win and one real loss, each
-    (win, loss) combination becomes one pair: the shared prompt,
-    the winner's first assistant turn as chosen, the loser's first
-    assistant turn as rejected. Later-turn pairing needs aligned
-    contexts, which diverging trajectories do not have. Pairs
-    longer than the token cap are skipped: one outlier pair once
-    padded a whole training run to 8320 tokens and stalled it.
+    (win, loss) combination becomes one pair at the first point of
+    divergence: both trajectories' assistant turns align by index,
+    and the first index where the contents differ gives chosen
+    (the win's turn) and rejected (the loss's turn). The pair
+    prompt is the shared prefix: system, task prompt, and the
+    identical earlier turns, kept both as chat messages and as one
+    flattened prompt string. Combinations that never differ carry
+    no signal and are skipped. Pairs longer than the token cap are
+    skipped: one outlier pair once padded a whole training run to
+    8320 tokens and stalled it.
 
     The train/valid split happens by task, before pairing: about
     one tenth of the paired tasks, at least one, go to validation,
@@ -648,8 +734,8 @@ def export_pairs(
     def count(text: str) -> int:
         return len(tokenizer(text, add_special_tokens=False).input_ids)
 
-    wins: dict[str, list[tuple[str, str]]] = {}
-    losses: dict[str, list[tuple[str, str]]] = {}
+    wins: dict[str, list[list[dict[str, str]]]] = {}
+    losses: dict[str, list[list[dict[str, str]]]] = {}
     tasks_seen: set[str] = set()
     for episode_file in sorted(runs_dir.glob("*/episode.json")):
         record = json.loads(episode_file.read_text())
@@ -661,15 +747,17 @@ def export_pairs(
         prompt = (
             prompt_file.read_text().strip()
             if prompt_file.is_file()
-            else "Complete the task in this repository."
+            else TASK_PROMPT_PREFIX
         )
-        first = _first_assistant_content(_render_messages(trajectory, prompt))
-        if first is None:
+        messages = _render_messages(trajectory, prompt)
+        if not any(
+            message["role"] == "assistant" for message in messages
+        ):
             continue
         if float(record["reward"]) >= 1.0:
-            wins.setdefault(task, []).append((prompt, first))
+            wins.setdefault(task, []).append(messages)
         elif _episode_qualifies_as_loss(session_file):
-            losses.setdefault(task, []).append((prompt, first))
+            losses.setdefault(task, []).append(messages)
 
     paired_tasks = sorted(
         task for task in tasks_seen if wins.get(task) and losses.get(task)
@@ -686,16 +774,24 @@ def export_pairs(
     train: list[str] = []
     valid: list[str] = []
     skipped_oversize = 0
+    skipped_identical = 0
     for task in paired_tasks:
         documents = valid if task in valid_tasks else train
         written = 0
-        for prompt, chosen in wins[task]:
-            for _, rejected in losses[task]:
+        for win_messages in wins[task]:
+            for loss_messages in losses[task]:
                 if written >= max_pairs_per_task:
                     break
-                total_tokens = count(SYSTEM_PROMPT + prompt) + max(
-                    count(chosen), count(rejected)
+                divergence = _first_divergence(
+                    win_messages, loss_messages
                 )
+                if divergence is None:
+                    skipped_identical += 1
+                    continue
+                prefix, chosen, rejected = divergence
+                total_tokens = sum(
+                    count(message["content"]) for message in prefix
+                ) + max(count(chosen), count(rejected))
                 if total_tokens > token_cap:
                     skipped_oversize += 1
                     continue
@@ -703,9 +799,14 @@ def export_pairs(
                     json.dumps(
                         {
                             "system": SYSTEM_PROMPT,
-                            "prompt": prompt,
+                            "prompt": "\n\n".join(
+                                message["content"]
+                                for message in prefix
+                                if message["role"] != "system"
+                            ),
                             "chosen": chosen,
                             "rejected": rejected,
+                            "messages": prefix,
                         }
                     )
                 )
@@ -719,6 +820,7 @@ def export_pairs(
         tasks_paired=len(paired_tasks),
         pairs_written=len(train) + len(valid),
         pairs_skipped_oversize=skipped_oversize,
+        pairs_skipped_identical=skipped_identical,
     )
 
 
@@ -739,7 +841,9 @@ def export_dataset(
     stays 0. The train/valid split separates whole trajectories so
     that no session contributes samples to both files. The valid
     set takes randomly chosen trajectories, with a fixed seed,
-    until it holds about one tenth of the samples.
+    until it holds about one tenth of the samples. After the
+    writes, the written files are re-read and scanned for holdout
+    fingerprints; any hit aborts the export with SystemExit.
     """
     count_tokens = load_token_counter(tokenizer_id)
     (
@@ -777,6 +881,9 @@ def export_dataset(
     if not splits:
         (out_dir / "train.jsonl").write_text("")
         (out_dir / "valid.jsonl").write_text("")
+        fingerprint_hits = _scan_written_dataset(
+            out_dir, _holdout_fingerprints(holdout_dir)
+        )
         return ExportStats(
             episodes_seen=episodes_seen,
             episodes_excluded_holdout=episodes_excluded,
@@ -790,6 +897,7 @@ def export_dataset(
             train_samples=0,
             valid_samples=0,
             sessions_excluded_holdout_content=excluded_content,
+            dataset_fingerprint_hits=fingerprint_hits,
         )
 
     if len(splits) == 1:
@@ -814,6 +922,9 @@ def export_dataset(
     valid = [sample for split in valid_splits for sample in split.samples]
     (out_dir / "train.jsonl").write_text("\n".join(train) + "\n")
     (out_dir / "valid.jsonl").write_text("\n".join(valid) + "\n")
+    fingerprint_hits = _scan_written_dataset(
+        out_dir, _holdout_fingerprints(holdout_dir)
+    )
     return ExportStats(
         episodes_seen=episodes_seen,
         episodes_excluded_holdout=episodes_excluded,
@@ -827,4 +938,5 @@ def export_dataset(
         train_samples=len(train),
         valid_samples=len(valid),
         sessions_excluded_holdout_content=excluded_content,
+        dataset_fingerprint_hits=fingerprint_hits,
     )

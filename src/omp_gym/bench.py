@@ -7,6 +7,7 @@ report can compare pass rate, latency, and price side by side.
 """
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -164,40 +165,80 @@ def _row_from_record(record: EpisodeRecord, trial: int) -> BenchRow:
     )
 
 
+def wilson_interval(passes: int, runs: int) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial pass rate.
+
+    The point estimate overstates certainty at bench sample sizes:
+    1/1 is not better than 9/10. With no runs the rate is fully
+    unknown, so the interval is (0, 1).
+    """
+    if runs <= 0:
+        return (0.0, 1.0)
+    z = 1.959963984540054
+    rate = passes / runs
+    denominator = 1.0 + z * z / runs
+    center = (rate + z * z / (2 * runs)) / denominator
+    half = (
+        z
+        * math.sqrt(rate * (1.0 - rate) / runs + z * z / (4 * runs * runs))
+        / denominator
+    )
+    return (max(0.0, center - half), min(1.0, center + half))
+
+
 def render_report(rows: list[BenchRow]) -> str:
     """Render the leaderboard and the task matrix as markdown.
 
     The headline pass rate divides successful episodes by all
-    scheduled rows for the model. An error row is a scheduled
-    episode that did not succeed: infrastructure failures appear
-    in the errors column and in the provider-errors section, but
-    they never leave the denominator.
+    scheduled rows for the model, and carries a 95% Wilson
+    interval over the same denominator. The leaderboard sorts by
+    the interval lower bound; when the intervals of adjacent
+    models overlap, the rank column shows '=' because the data
+    does not separate them. An error row is a scheduled episode
+    that did not succeed: infrastructure failures appear in the
+    errors column and in the provider-errors section, but they
+    never leave the denominator.
     """
     models = sorted({row.model for row in rows})
     tasks = sorted({row.task for row in rows})
 
     lines = ["# omp-gym bench", ""]
     lines.append(
-        "| model | pass rate | errors | mean seconds | mean tokens "
-        "| total cost usd | tool calls |"
+        "| rank | model | pass rate | errors | mean seconds "
+        "| mean tokens | total cost usd | tool calls |"
     )
-    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
 
     def scheduled_rows(model: str) -> list[BenchRow]:
         return [row for row in rows if row.model == model]
 
-    def pass_rate(model: str) -> float:
+    def interval(model: str) -> tuple[float, float]:
         scheduled = scheduled_rows(model)
-        if not scheduled:
-            return -1.0
         wins = sum(1 for row in scheduled if row.reward >= 1.0)
-        return wins / len(scheduled)
+        return wilson_interval(wins, len(scheduled))
 
-    for model in sorted(models, key=lambda m: -pass_rate(m)):
+    ordered = sorted(models, key=lambda model: -interval(model)[0])
+    bounds = [interval(model) for model in ordered]
+
+    def rank_cell(position: int) -> str:
+        low, high = bounds[position]
+        before = position > 0 and bounds[position - 1][0] <= high
+        after = (
+            position + 1 < len(bounds)
+            and low <= bounds[position + 1][1]
+        )
+        return "=" if before or after else str(position + 1)
+
+    for position, model in enumerate(ordered):
         scheduled = scheduled_rows(model)
         clean = [row for row in scheduled if row.error is None]
         errored = [row for row in scheduled if row.error is not None]
-        rate = f"{pass_rate(model):.0%} ({len(scheduled)} runs)"
+        wins = sum(1 for row in scheduled if row.reward >= 1.0)
+        low, high = bounds[position]
+        rate = (
+            f"{wins / len(scheduled):.0%} [{low:.0%}, {high:.0%}] "
+            f"(n={len(scheduled)})"
+        )
         if clean:
             count = len(clean)
             mean_seconds = f"{sum(r.duration_seconds for r in clean) / count:.1f}"
@@ -209,8 +250,8 @@ def render_report(rows: list[BenchRow]) -> str:
                 "-", "-", "-", "-",
             )
         lines.append(
-            f"| {model} | {rate} | {len(errored)} | {mean_seconds} "
-            f"| {mean_tokens} | {total_cost} | {calls} |"
+            f"| {rank_cell(position)} | {model} | {rate} | {len(errored)} "
+            f"| {mean_seconds} | {mean_tokens} | {total_cost} | {calls} |"
         )
 
     lines.extend(["", "## Task matrix", ""])

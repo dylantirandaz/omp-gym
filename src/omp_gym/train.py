@@ -49,6 +49,10 @@ def _validate_loss_curves(
     The train loss must go down. When val losses exist, the last
     val loss must not be higher than the first: a rise means the
     adapter fit the train set and got worse on held-out data.
+    A memorization-shaped run also fails: the train loss drops by
+    more than 15% while the val loss drops by less than a quarter
+    of the train drop. Such a run learned the train set, not the
+    task.
     """
     if len(losses) < 2:
         raise TrainError("no loss reports found in training output")
@@ -61,6 +65,16 @@ def _validate_loss_curves(
             "val loss went up: "
             f"{val_losses[0]} -> {val_losses[-1]}"
         )
+    if val_losses and val_losses[0] > 0:
+        train_drop = (losses[0] - losses[-1]) / losses[0]
+        val_drop = (val_losses[0] - val_losses[-1]) / val_losses[0]
+        if train_drop > 0.15 and val_drop < train_drop / 4:
+            raise TrainError(
+                "memorization-shaped run: train loss dropped "
+                f"{train_drop:.1%} but val loss dropped only "
+                f"{val_drop:.1%}; the adapter learned the train "
+                "set, not the task"
+            )
 
 
 def _stream_trainer(

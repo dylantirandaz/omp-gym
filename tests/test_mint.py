@@ -1,9 +1,10 @@
 """Tests for mint hardening.
 
-The tests cover four contracts: a captured command with shell
+The tests cover five contracts: a captured command with shell
 metacharacters never becomes a task, generated task.toml is
 always loadable TOML, workspace rebuild stays inside the
-workspace root, and minted text is redacted.
+workspace root, minted text is redacted, and SOURCE.md names
+the session relative to the sessions root.
 """
 
 import json
@@ -252,6 +253,31 @@ class RedactionTests(unittest.TestCase):
             self.assertNotIn(home, raw["prompt"])
             self.assertIn("~/logs", config)
             self.assertIn("~/project", raw["prompt"])
+
+
+class SourcePathTests(unittest.TestCase):
+    def test_source_md_strips_prefix_above_sessions_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_home = root / "home" / "someone"
+            sessions = fake_home / ".omp" / "agent" / "sessions"
+            day_dir = sessions / "2026-08-01"
+            day_dir.mkdir(parents=True)
+            out = root / "tasks"
+            _write_session(
+                day_dir,
+                "pytest tests/unit/test_x.py -q",
+                {"tests/unit/test_x.py": "def test_a():\n    assert True\n"},
+            )
+            minted = mint_tasks(sessions, out, 5)
+            self.assertEqual(len(minted), 1)
+            source = (Path(minted[0].task_dir) / "SOURCE.md").read_text()
+            self.assertIn(
+                "source session: sessions/2026-08-01/session.jsonl",
+                source,
+            )
+            self.assertNotIn(str(fake_home), source)
+            self.assertNotIn(".omp/agent", source)
 
 
 if __name__ == "__main__":

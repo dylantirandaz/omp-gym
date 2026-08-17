@@ -1,0 +1,13 @@
+prompt = """
+Implement apply_event in events.py and replay and compact in store.py
+so that test_event_sourcing.py passes. The module docstrings in
+events.py and store.py state the exact rules for idempotency, event
+ordering, duplicate sequence numbers, snapshots, and log compaction.
+Both modules need work; a change to only one file cannot pass. Do not
+change the test file. Run `python3 test_event_sourcing.py` to confirm
+that all tests pass.
+"""
+test_command = ["python3", "test_event_sourcing.py"]
+context_files = ["events.py", "store.py", "test_event_sourcing.py"]
+tools = "read,write,bash"
+max_time = "300"

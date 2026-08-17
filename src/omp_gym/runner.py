@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import signal
 import subprocess
@@ -34,6 +35,10 @@ _FAILED_PATTERN = re.compile(r"(\d+) of (\d+) cases failed")
 _UNITTEST_RAN_PATTERN = re.compile(r"Ran (\d+) tests? in")
 _UNITTEST_COUNT_PATTERN = re.compile(r"(?:failures|errors)=(\d+)")
 _ALL_PASSED_PATTERN = re.compile(r"all (\d+) cases passed")
+_ALL_PASSED_UNNUMBERED_PATTERN = re.compile(r"\ball .{0,24}cases passed\b")
+_FAILURE_MARKER_PATTERN = re.compile(
+    r"FAIL|FAILED|Traceback|AssertionError|\bfailed\b|\berrors?\b|\bError\b"
+)
 _PYTEST_PASSED_PATTERN = re.compile(r"(\d+) passed")
 _EPISODE_HOST_ENV_NAMES = (
     "PATH",
@@ -234,31 +239,70 @@ def _partial_credit(test_output: str) -> float | None:
 def _test_evidence(test_output: str) -> int:
     """Count of test cases the output proves ran and passed.
 
-    Three shapes give a positive count: a custom script's
+    Failure markers rule first: when FAIL, FAILED, Traceback,
+    AssertionError, or an error token appears anywhere, the count
+    is 0 no matter what positive lines coexist. A forged success
+    line printed at import time sits next to the real failure
+    summary, so this precedence kills print-only forgery. After
+    that, three shapes give a positive count: a custom script's
     "all N cases passed", unittest's "Ran N tests" followed by
-    "OK" with no "FAILED", and a pytest summary line "N passed"
-    with no "failed" and no "error" token. All other output,
-    including empty output, gives 0.
+    "OK", and a pytest summary "N passed". A final unnumbered
+    "all ... cases passed" line counts as one proven case for
+    scripts that do not print a number.
     """
+    if _FAILURE_MARKER_PATTERN.search(test_output):
+        return 0
     custom = _ALL_PASSED_PATTERN.search(test_output)
     if custom:
         return int(custom.group(1))
     ran = _UNITTEST_RAN_PATTERN.search(test_output)
     if ran:
         after_ran = test_output[ran.end() :]
-        if "FAILED" not in test_output and re.search(r"\bOK\b", after_ran):
+        if re.search(r"\bOK\b", after_ran):
             return int(ran.group(1))
         return 0
     for line in reversed(test_output.splitlines()):
         if "passed" not in line:
             continue
-        lowered = line.lower()
-        if "failed" in lowered or "error" in lowered:
-            return 0
         passed = _PYTEST_PASSED_PATTERN.search(line)
         if passed:
             return int(passed.group(1))
+        if _ALL_PASSED_UNNUMBERED_PATTERN.search(line):
+            return 1
     return 0
+
+
+def _case_total(test_output: str) -> int | None:
+    """Total number of test cases named by the output, if any.
+
+    The total anchors the exact-count rule: evidence from a later
+    run must equal the pristine baseline's total. Custom scripts
+    name it in "N of M cases failed", unittest in "Ran N tests",
+    and pytest in the summed summary counts.
+    """
+    found = _FAILED_PATTERN.search(test_output)
+    if found:
+        return int(found.group(2))
+    ran = _UNITTEST_RAN_PATTERN.search(test_output)
+    if ran:
+        return int(ran.group(1))
+    for line in reversed(test_output.splitlines()):
+        if "passed" not in line and "failed" not in line:
+            continue
+        failed_m = re.search(r"(\d+) failed", line)
+        passed_m = re.search(r"(\d+) passed", line)
+        errors_m = re.search(r"(\d+) errors?\b", line)
+        total = sum(
+            int(match.group(1))
+            for match in (failed_m, passed_m, errors_m)
+            if match
+        )
+        if total:
+            return total
+    custom = _ALL_PASSED_PATTERN.search(test_output)
+    if custom:
+        return int(custom.group(1))
+    return None
 
 
 def _score_test_run(
@@ -420,6 +464,198 @@ def _build_eval_dir(
 
 
 @dataclass(frozen=True)
+class Evidence:
+    """Proof of executed passing cases, bound to one episode nonce.
+
+    Only score_solution builds this value, after the canary pass
+    confirms the solution does not intercept process exit and the
+    case count matches the expected total.
+    """
+
+    cases_passed: int
+    nonce: str
+
+
+@dataclass(frozen=True)
+class ScoreResult:
+    """Outcome of scoring one episode workspace."""
+
+    reward: float
+    reward_partial: float | None
+    evidence: int
+    expected_cases: int | None
+    test_files_changed: bool
+    test_exit_code: int
+    test_output: str
+    timed_out: bool = False
+    reason: str | None = None
+
+
+_PYTHON_RUNNERS = frozenset({"python3", "python", "pytest"})
+
+
+def _solution_code_files(
+    eval_dir: Path, protected: tuple[str, ...], node_task: bool
+) -> tuple[Path, ...]:
+    """Code files in the eval directory that the canary must import."""
+    protected_set = set(protected)
+    suffix = ".mjs" if node_task else ".py"
+    files = [
+        path
+        for path in sorted(eval_dir.rglob(f"*{suffix}"))
+        if path.is_file()
+        and path.relative_to(eval_dir).as_posix() not in protected_set
+        and "__pycache__" not in path.parts
+    ]
+    return tuple(files)
+
+
+def _canary_command(
+    eval_dir: Path, nonce: str, solution_files: tuple[Path, ...], node_task: bool
+) -> tuple[str, ...]:
+    """Write the canary script and return the command that runs it.
+
+    The canary imports every solution module and then exits with
+    code 13. Solution code that hijacks process exit (os._exit,
+    sys.exit, process.exit, exit-event emitters) changes that code,
+    and the score is withheld. The nonce in the file name marks the
+    script as harness-made after the episode ended.
+    """
+    if node_task:
+        script = eval_dir / f"canary_{nonce}.mjs"
+        imports = "\n".join(
+            f"try {{ await import({json.dumps(path.as_uri())}); }} catch {{}}"
+            for path in solution_files
+        )
+        script.write_text(imports + "\nprocess.exit(13);\n")
+        return ("node", str(script))
+    script = eval_dir / f"canary_{nonce}.py"
+    lines = [
+        "import importlib.util",
+        "import os",
+        "",
+    ]
+    for index, path in enumerate(solution_files):
+        lines.extend(
+            [
+                "try:",
+                "    _spec = importlib.util.spec_from_file_location(",
+                f"        'canary_module_{index}', {json.dumps(str(path))}",
+                "    )",
+                "    _module = importlib.util.module_from_spec(_spec)",
+                "    _spec.loader.exec_module(_module)",
+                "except Exception:",
+                "    pass",
+            ]
+        )
+    lines.append("os._exit(13)")
+    script.write_text("\n".join(lines) + "\n")
+    return ("python3", str(script))
+
+
+def score_solution(
+    task: TaskSpec,
+    episode_workspace: Path,
+    scratch_dir: Path,
+    expected_cases: int | None,
+) -> ScoreResult:
+    """Score an episode workspace against the task's pristine tests.
+
+    The pipeline: refuse changed protected files, rebuild a fresh
+    eval directory from pristine tests plus safe solution files,
+    run the real tests, run the canary, then grant reward only for
+    a valid Evidence value: canary exit 13, positive evidence, and
+    an exact case-count match when the expected total is known.
+    """
+    protected = _protected_files(task)
+    pristine_digests = _file_digests(task.workspace, protected)
+    changed = _changed_protected_files(episode_workspace, pristine_digests)
+    if changed:
+        line = "protected test files changed: " + ", ".join(changed) + "\n"
+        return ScoreResult(
+            reward=0.0,
+            reward_partial=None,
+            evidence=0,
+            expected_cases=expected_cases,
+            test_files_changed=True,
+            test_exit_code=1,
+            test_output=line,
+        )
+
+    eval_dir = scratch_dir / "eval"
+    if eval_dir.exists():
+        shutil.rmtree(eval_dir)
+    _build_eval_dir(eval_dir, task.workspace, episode_workspace, protected)
+    nonce = secrets.token_hex(8)
+    test_run = _run_grouped(
+        task.test_command,
+        cwd=eval_dir,
+        env=_test_environment(os.environ),
+        timeout=120,
+    )
+    if test_run.timed_out:
+        return ScoreResult(
+            reward=0.0,
+            reward_partial=None,
+            evidence=0,
+            expected_cases=expected_cases,
+            test_files_changed=False,
+            test_exit_code=-1,
+            test_output="test command exceeded the 120s deadline\n",
+            timed_out=True,
+            reason="test command exceeded the 120s deadline",
+        )
+    test_output = test_run.stdout + test_run.stderr
+    reward, partial, evidence = _score_test_run(
+        test_run.returncode, test_output
+    )
+
+    reason: str | None = None
+    if reward == 1.0:
+        node_task = task.test_command[0] not in _PYTHON_RUNNERS
+        solution_files = _solution_code_files(eval_dir, protected, node_task)
+        canary_run = _run_grouped(
+            _canary_command(eval_dir, nonce, solution_files, node_task),
+            cwd=eval_dir,
+            env=_test_environment(os.environ),
+            timeout=30,
+        )
+        if canary_run.timed_out or canary_run.returncode != 13:
+            reward, partial, evidence = 0.0, None, 0
+            reason = (
+                "canary run exited "
+                f"{'late' if canary_run.timed_out else canary_run.returncode}"
+                "; solution code intercepts process exit"
+            )
+        elif expected_cases is not None and evidence != expected_cases:
+            reward, partial = 0.0, None
+            reason = (
+                f"case count mismatch: evidence {evidence}, "
+                f"expected {expected_cases}"
+            )
+            evidence = 0
+        else:
+            _ = Evidence(cases_passed=evidence, nonce=nonce)
+    elif test_run.returncode == 0 and evidence == 0:
+        reason = "test exited 0 without test evidence"
+
+    if reason is not None:
+        if test_output and not test_output.endswith("\n"):
+            test_output += "\n"
+        test_output += reason + "\n"
+    return ScoreResult(
+        reward=reward,
+        reward_partial=partial,
+        evidence=evidence,
+        expected_cases=expected_cases,
+        test_files_changed=False,
+        test_exit_code=test_run.returncode,
+        test_output=test_output,
+        reason=reason,
+    )
+
+
+@dataclass(frozen=True)
 class EpisodeRecord:
     """Result of one completed episode."""
 
@@ -436,6 +672,7 @@ class EpisodeRecord:
     test_evidence: int = 0
     baseline_evidence: int = 0
     baseline_partial: float | None = None
+    expected_cases: int | None = None
 
 
 @dataclass(frozen=True)
@@ -508,11 +745,14 @@ def run_episode(
         )
     baseline_evidence = _test_evidence(baseline_output)
     baseline_partial = _partial_credit(baseline_output)
+    expected_cases = (
+        task.expected_cases
+        if task.expected_cases is not None
+        else _case_total(baseline_output)
+    )
 
     shutil.copytree(task.workspace, workspace)
     session_dir.mkdir()
-    protected = _protected_files(task)
-    pristine_digests = _file_digests(task.workspace, protected)
     prompt = _episode_prompt(task, workspace)
     (episode_dir / "prompt.txt").write_text(prompt + "\n")
 
@@ -565,54 +805,14 @@ def run_episode(
             reason=(f"omp exited with {omp_run.returncode} and wrote no session"),
         )
 
-    changed = _changed_protected_files(workspace, pristine_digests)
-    if changed:
-        (episode_dir / "test_output.log").write_text(
-            "protected test files changed: " + ", ".join(changed) + "\n"
-        )
-        record = EpisodeRecord(
-            task=task.name,
-            model=model if model is not None else "default",
-            episode_dir=str(episode_dir),
-            session_file=str(session_file),
-            omp_exit_code=omp_run.returncode,
-            test_exit_code=1,
-            reward=0.0,
-            reward_partial=None,
-            duration_seconds=round(duration, 1),
-            test_files_changed=True,
-            baseline_evidence=baseline_evidence,
-            baseline_partial=baseline_partial,
-        )
-        (episode_dir / "episode.json").write_text(
-            json.dumps(asdict(record), indent=2)
-        )
-        return record
-
-    eval_dir = _build_eval_dir(
-        episode_dir / "eval", task.workspace, workspace, protected
-    )
-    test_run = _run_grouped(
-        task.test_command,
-        cwd=eval_dir,
-        env=_test_environment(os.environ),
-        timeout=120,
-    )
-    if test_run.timed_out:
-        (episode_dir / "test_output.log").write_text(
-            "test command exceeded the 120s deadline\n"
-        )
+    result = score_solution(task, workspace, episode_dir, expected_cases)
+    if result.timed_out:
+        (episode_dir / "test_output.log").write_text(result.test_output)
         return EpisodeFailure(
             task=task.name,
-            reason="test command exceeded the 120s deadline",
+            reason=result.reason or "test command timed out",
         )
-    test_output = test_run.stdout + test_run.stderr
-    reward, partial, evidence = _score_test_run(test_run.returncode, test_output)
-    if test_run.returncode == 0 and evidence == 0:
-        if test_output and not test_output.endswith("\n"):
-            test_output += "\n"
-        test_output += "test exited 0 without test evidence\n"
-    (episode_dir / "test_output.log").write_text(test_output)
+    (episode_dir / "test_output.log").write_text(result.test_output)
 
     record = EpisodeRecord(
         task=task.name,
@@ -620,13 +820,15 @@ def run_episode(
         episode_dir=str(episode_dir),
         session_file=str(session_file),
         omp_exit_code=omp_run.returncode,
-        test_exit_code=test_run.returncode,
-        reward=reward,
-        reward_partial=partial,
+        test_exit_code=result.test_exit_code,
+        reward=result.reward,
+        reward_partial=result.reward_partial,
         duration_seconds=round(duration, 1),
-        test_evidence=evidence,
+        test_files_changed=result.test_files_changed,
+        test_evidence=result.evidence,
         baseline_evidence=baseline_evidence,
         baseline_partial=baseline_partial,
+        expected_cases=result.expected_cases,
     )
     (episode_dir / "episode.json").write_text(json.dumps(asdict(record), indent=2))
     return record

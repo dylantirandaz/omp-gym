@@ -16,19 +16,28 @@ training data without these exact markers passes the leak check,
 and drift only sees the one probed layer.
 """
 
+from __future__ import annotations
+
 import gc
 import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import mlx.core as mx
-from mlx_lm import generate, load
-from mlx_lm.sample_utils import make_sampler
+try:
+    import mlx.core as mx
+    from mlx_lm import generate, load
+    from mlx_lm.sample_utils import make_sampler
+
+    from .sae import SAE_LAYER, _captured_forward, train_sae
+except ModuleNotFoundError:
+    # Off-Mac machines have no mlx. The pure helpers and the
+    # constants stay importable; run_gate fails at preflight.
+    mx = generate = load = make_sampler = None
+    SAE_LAYER = _captured_forward = train_sae = None
 
 from .export import SYSTEM_PROMPT, TASK_PROMPT_PREFIX
 from .preflight import require_metal_gpu
-from .sae import SAE_LAYER, _captured_forward, train_sae
 from .task import TaskLoadError, load_task
 
 TOP_K = 32

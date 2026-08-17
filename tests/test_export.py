@@ -942,5 +942,165 @@ class PairTaskSplitTests(unittest.TestCase):
             self.assertNotEqual(marker in train, marker in valid)
 
 
+class DatasetLeakScanTests(unittest.TestCase):
+    def _write_scored_episode(
+        self, root: Path, name: str, assistant_text: str
+    ) -> None:
+        episode_dir = root / "runs" / name
+        episode_dir.mkdir(parents=True)
+        session_file = root / "sessions" / f"{name}.jsonl"
+        _write_session(
+            session_file, "Solve the interval task.", assistant_text
+        )
+        (episode_dir / "episode.json").write_text(
+            json.dumps(
+                {
+                    "task": name,
+                    "reward": 1.0,
+                    "session_file": str(session_file),
+                    "episode_dir": str(episode_dir),
+                }
+            )
+        )
+
+    def _export(self, root: Path):
+        with mock.patch(
+            "omp_gym.export.load_token_counter",
+            return_value=_token_counter,
+        ):
+            return export_dataset(
+                root / "runs",
+                None,
+                root / "out",
+                1.0,
+                "unused-tokenizer",
+                2048,
+                holdout_dir=root / "holdout-tasks",
+            )
+
+    def test_rewrapped_fingerprint_in_written_file_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "sessions").mkdir()
+            _write_holdout_test(root / "holdout-tasks")
+            wrapped = _FINGERPRINT_LINE.replace(" == ", "\n== ")
+            self.assertNotIn(_FINGERPRINT_LINE, wrapped)
+            self._write_scored_episode(root, "leaky", "Done:\n" + wrapped)
+
+            with self.assertRaises(SystemExit) as caught:
+                self._export(root)
+
+        message = str(caught.exception)
+        self.assertIn("train.jsonl", message)
+        self.assertIn("union_intervals", message)
+
+    def test_clean_export_reports_zero_fingerprint_hits(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "sessions").mkdir()
+            _write_holdout_test(root / "holdout-tasks")
+            self._write_scored_episode(root, "clean", "The bug is fixed.")
+
+            stats = self._export(root)
+
+        self.assertEqual(stats.dataset_fingerprint_hits, 0)
+        self.assertEqual(stats.train_samples, 1)
+
+
+def _write_pair_episode(
+    root: Path,
+    name: str,
+    task: str,
+    reward: float,
+    assistant_turns: list[str],
+) -> None:
+    """Write one scored episode with alternating user/assistant turns."""
+    episode_dir = root / "runs" / name
+    episode_dir.mkdir(parents=True)
+    session_file = root / "sessions" / f"{name}.jsonl"
+    lines = [_session_line("user", f"Do {task}.")]
+    for turn, text in enumerate(assistant_turns):
+        lines.append(_session_line("assistant", text))
+        if turn + 1 < len(assistant_turns):
+            lines.append(_session_line("user", "Now finish."))
+    session_file.write_text("\n".join(lines) + "\n")
+    (episode_dir / "episode.json").write_text(
+        json.dumps(
+            {
+                "task": task,
+                "reward": reward,
+                "session_file": str(session_file),
+                "episode_dir": str(episode_dir),
+            }
+        )
+    )
+
+
+class PairDivergenceTests(unittest.TestCase):
+    def _export(self, root: Path):
+        with mock.patch.dict(
+            sys.modules, {"transformers": _fake_transformers()}
+        ):
+            return export_pairs(
+                root / "runs",
+                root / "out",
+                max_pairs_per_task=16,
+                tokenizer_id="unused-tokenizer",
+                token_cap=4096,
+            )
+
+    def test_pair_forms_at_the_first_divergent_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "sessions").mkdir()
+            _write_pair_episode(
+                root, "win", "fix-parser", 1.0,
+                ["turn one shared", "turn two win"],
+            )
+            _write_pair_episode(
+                root, "loss", "fix-parser", 0.0,
+                ["turn one shared", "turn two loss"],
+            )
+
+            stats = self._export(root)
+            train_lines = (
+                (root / "out" / "train.jsonl").read_text().splitlines()
+            )
+
+        self.assertEqual(stats.pairs_written, 1)
+        self.assertEqual(stats.pairs_skipped_identical, 0)
+        self.assertEqual(len(train_lines), 1)
+        record = json.loads(train_lines[0])
+        self.assertEqual(record["chosen"], "turn two win")
+        self.assertEqual(record["rejected"], "turn two loss")
+        self.assertIn("turn one shared", record["prompt"])
+        self.assertIn("Do fix-parser.", record["prompt"])
+        self.assertNotIn("turn two", record["prompt"])
+        prefix = record["messages"]
+        self.assertEqual(prefix[0]["role"], "system")
+        self.assertEqual(prefix[-1]["role"], "user")
+        self.assertEqual(prefix[-1]["content"], "Now finish.")
+        self.assertEqual(
+            [m["content"] for m in prefix if m["role"] == "assistant"],
+            ["turn one shared"],
+        )
+
+    def test_identical_trajectories_produce_no_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "sessions").mkdir()
+            turns = ["same turn one", "same turn two"]
+            _write_pair_episode(root, "win", "fix-parser", 1.0, turns)
+            _write_pair_episode(root, "loss", "fix-parser", 0.0, turns)
+
+            stats = self._export(root)
+            train = (root / "out" / "train.jsonl").read_text()
+
+        self.assertEqual(stats.tasks_paired, 1)
+        self.assertEqual(stats.pairs_written, 0)
+        self.assertEqual(stats.pairs_skipped_identical, 1)
+        self.assertEqual(train, "")
+
+
 if __name__ == "__main__":
     unittest.main()
