@@ -53,5 +53,5 @@ jobs:
           assert "Requires-Python: <3.14,>=3.11" in metadata
           assert "@main" not in metadata
           assert "@0a4d872f021022310a08ec213a25f4efb4a0244a" in metadata
-          assert "@0cf4f7f0398477db4b57451f5b340eb9bfe5f5ff" in metadata
+          assert "@ec0cd4cd0ab9a40eb2b5a4f01def014b6f1fc111" in metadata
           PY
