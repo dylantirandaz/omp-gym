@@ -1,6 +1,6 @@
 [project]
 name = "omp-coding"
-version = "0.3.1"
+version = "0.3.2"
 description = "Agentic coding tasks driven through the omp harness: real tool-use episodes scored by tests."
 requires-python = ">=3.11,<3.14"
 readme = "README.md"
@@ -9,7 +9,7 @@ tags = ["coding", "agent", "tools", "omp"]
 dependencies = [
     "datasets>=3.3,<6",
     "verifiers @ git+https://github.com/PrimeIntellect-ai/verifiers.git@0a4d872f021022310a08ec213a25f4efb4a0244a",
-    "omp-gym @ git+https://github.com/dylantirandaz/omp-gym.git@b76ea2dc2131f5502abb99bb9bde932cc6675cc2",
+    "omp-gym @ git+https://github.com/dylantirandaz/omp-gym.git@0cf4f7f0398477db4b57451f5b340eb9bfe5f5ff",
 ]
 
 [build-system]
