@@ -1,12 +1,12 @@
 [project]
 name = "omp-gym"
-version = "0.3.1"
+version = "0.3.2"
 description = "Training environment for coding models, built on the omp tool surface."
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "mlx-lm>=0.24,<1.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "transformers>=4.44,<5",
+    "mlx-lm>=0.31.3,<1.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "transformers>=5.5,<6",
     "pyyaml>=6,<7",
 ]
 
