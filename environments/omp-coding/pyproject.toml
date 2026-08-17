@@ -9,7 +9,7 @@ tags = ["coding", "agent", "tools", "omp"]
 dependencies = [
     "datasets>=3.3,<6",
     "verifiers @ git+https://github.com/PrimeIntellect-ai/verifiers.git@0a4d872f021022310a08ec213a25f4efb4a0244a",
-    "omp-gym @ git+https://github.com/dylantirandaz/omp-gym.git@main",
+    "omp-gym @ git+https://github.com/dylantirandaz/omp-gym.git@e2c81dc1354b12d6628ba3c621fb17a0bfe5469d",
 ]
 
 [build-system]
