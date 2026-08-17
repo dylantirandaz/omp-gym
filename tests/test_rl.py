@@ -680,6 +680,7 @@ class RunRlFakeTests(unittest.TestCase):
             mock.patch.multiple(
                 "omp_gym.rl",
                 require_metal_gpu=lambda: SimpleNamespace(device_name="fake-gpu"),
+                Adam=None,
                 load_task=lambda path: TaskSpec(
                     name=Path(path).name,
                     prompt="do the thing",

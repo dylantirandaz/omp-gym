@@ -731,7 +731,7 @@ def run_rl(
             tokenizer_holder.append(_load_tokenizer(base_model))
         return tokenizer_holder[0]
 
-    optimizer = Adam(learning_rate=5e-6)
+    optimizer = None
     rounds: list[IterationMetrics] = []
     first_mean_length: float | None = None
     stopped_early = False
@@ -963,6 +963,10 @@ def run_rl(
                         f"iteration {iteration}: grad norm {total_norm:.3f} "
                         f"clipped to {grad_clip:.3f}"
                     )
+            if optimizer is None:
+                if Adam is None:
+                    raise RlError("MLX optimizer is not available after preflight")
+                optimizer = Adam(learning_rate=5e-6)
             optimizer.update(current, grads)
             mx.eval(current.trainable_parameters(), optimizer.state)
             _require_finite_tensors(
