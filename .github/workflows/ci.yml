@@ -8,6 +8,8 @@ on:
 jobs:
   checks:
     strategy:
+      fail-fast: false
+      max-parallel: 1
       matrix:
         os: [macos-14, ubuntu-latest]
     runs-on: ${{ matrix.os }}
@@ -19,6 +21,7 @@ jobs:
       - run: uv run python -m unittest discover -s tests
 
   environment-package:
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
