@@ -1,5 +1,6 @@
 .env
 .venv/
+.prime/
 runs/
 holdout-results/
 tasks-rejected/
