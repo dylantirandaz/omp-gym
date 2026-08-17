@@ -366,12 +366,21 @@ the exact binary `EpisodeRecord.reward`. A loopback endpoint gets
 loopback access only. A remote endpoint gets outbound HTTPS.
 
 The host must have `omp` on `PATH`. The package does not change the
-user's omp configuration. Build and test the wheel before publication,
-then run:
+user's omp configuration. The public environment is
+[`dylantirandaz/omp-coding`](https://app.primeintellect.ai/dashboard/environments/dylantirandaz/omp-coding).
+Install version 0.3.3 with:
+
+```sh
+prime env install dylantirandaz/omp-coding@0.3.3
+```
+
+Use the Prime CLI installer. It adds the two immutable Git requirements
+that the wheel declares. For a new release, build and test the wheel first.
+Then run:
 
 ```sh
 prime env push --path environments/omp-coding --visibility PUBLIC
 ```
 
 See `environments/omp-coding/README.md` for the local one-rollout
-smoke command and the pinned API assumptions.
+command and the pinned API assumptions.
