@@ -8,6 +8,7 @@ work; a change to only one file cannot pass. Do not change the test
 file. Run `python3 test_policy.py` to confirm that all tests pass.
 """
 test_command = ["python3", "test_policy.py"]
+expected_cases = 16
 context_files = ["jitter.py", "policy.py", "test_policy.py"]
 tools = "read,write,bash"
 max_time = "300"

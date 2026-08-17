@@ -5,6 +5,7 @@ encoding. A bad encoding returns an RleError value. Do not change the
 test file. Run `python3 test_rle.py` to confirm that all tests pass.
 """
 test_command = ["python3", "test_rle.py"]
+expected_cases = 11
 context_files = ["rle.py", "test_rle.py"]
 tools = "read,write,bash"
 max_time = "300"

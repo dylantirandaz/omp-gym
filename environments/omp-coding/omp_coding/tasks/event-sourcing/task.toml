@@ -8,6 +8,7 @@ change the test file. Run `python3 test_event_sourcing.py` to confirm
 that all tests pass.
 """
 test_command = ["python3", "test_event_sourcing.py"]
+expected_cases = 20
 context_files = ["events.py", "store.py", "test_event_sourcing.py"]
 tools = "read,write,bash"
 max_time = "300"

@@ -7,6 +7,7 @@ that can still reach the anchor). Do not change the test file. Run
 `python3 test_graph.py` to confirm that all tests pass.
 """
 test_command = ["python3", "test_graph.py"]
+expected_cases = 15
 context_files = ["graph.py", "test_graph.py"]
 tools = "read,write,bash"
 max_time = "300"

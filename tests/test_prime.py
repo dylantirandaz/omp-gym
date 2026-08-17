@@ -177,6 +177,20 @@ class PrimeContractTests(unittest.TestCase):
         self.assertIn("js-router-tree", task_names)
         self.assertEqual(len(environment.rubric.funcs), 1)
 
+    def test_every_packaged_task_defines_expected_cases(self) -> None:
+        adapter = _load_prime_adapter()
+        missing: list[str] = []
+        for task_path in adapter.DEFAULT_TASKS_DIR.iterdir():
+            if not task_path.is_dir():
+                continue
+            loaded = adapter.load_task(task_path)
+            if isinstance(loaded, adapter.TaskLoadError):
+                self.fail(loaded.reason)
+            if loaded.expected_cases is None:
+                missing.append(task_path.name)
+
+        self.assertEqual(missing, [])
+
     def test_dataset_uses_the_task_prompt_and_slug_answer(self) -> None:
         adapter = _load_prime_adapter()
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -208,8 +222,8 @@ class PrimeContractTests(unittest.TestCase):
             "POLICY_KEY",
             "private-value",
             {"X-Team": "team"},
-        ) as environment:
-            models_file = Path(environment["OMP_MODELS"])
+        ) as route:
+            models_file = route.provider_route.models_file
             document = json.loads(models_file.read_text())
             provider = document["providers"]["omp-gym"]
             self.assertEqual(provider["baseUrl"], "https://policy.example/v1")
@@ -217,7 +231,8 @@ class PrimeContractTests(unittest.TestCase):
             self.assertEqual(models_file.stat().st_mode & 0o077, 0)
             self.assertEqual(provider["headers"], {"X-Team": "team"})
             self.assertNotIn("private-value", models_file.read_text())
-            self.assertEqual(environment["POLICY_KEY"], "private-value")
+            self.assertEqual(route.environment["POLICY_KEY"], "private-value")
+            self.assertEqual(route.provider_route.network, "open-443")
 
         self.assertFalse(models_file.exists())
 
@@ -264,7 +279,15 @@ class PrimeRolloutTests(unittest.TestCase):
                 mock.patch.object(
                     adapter,
                     "policy_environment",
-                    return_value=nullcontext({"OPENAI_BASE_URL": "stub"}),
+                    return_value=nullcontext(
+                        adapter.PolicyRoute(
+                            provider_route=adapter.EpisodeProviderRoute(
+                                models_file=root / "models.yml",
+                                network="loopback",
+                            ),
+                            environment={"POLICY_KEY": "secret"},
+                        )
+                    ),
                 ) as build_environment,
                 mock.patch.object(adapter, "run_episode", return_value=record) as run,
             ):
@@ -275,7 +298,7 @@ class PrimeRolloutTests(unittest.TestCase):
         task = run.call_args.args[0]
         self.assertEqual(task.prompt, "Use this prompt.")
         self.assertEqual(run.call_args.args[2], "omp-gym/policy")
-        self.assertEqual(run.call_args.args[3], {"OPENAI_BASE_URL": "stub"})
+        self.assertEqual(run.call_args.args[3], {"POLICY_KEY": "secret"})
         build_environment.assert_called_once_with(
             "http://127.0.0.1:8000/v1",
             "policy",
@@ -286,6 +309,13 @@ class PrimeRolloutTests(unittest.TestCase):
         self.assertEqual(
             run.call_args.kwargs["extra_secret_names"],
             ("POLICY_KEY",),
+        )
+        self.assertEqual(
+            run.call_args.kwargs["provider_route"],
+            adapter.EpisodeProviderRoute(
+                models_file=root / "models.yml",
+                network="loopback",
+            ),
         )
         self.assertIsInstance(state, _State)
         self.assertEqual(state["reward"], 1.0)
@@ -326,7 +356,15 @@ class PrimeRolloutTests(unittest.TestCase):
                 mock.patch.object(
                     adapter,
                     "policy_environment",
-                    return_value=nullcontext({"OPENAI_BASE_URL": "stub"}),
+                    return_value=nullcontext(
+                        adapter.PolicyRoute(
+                            provider_route=adapter.EpisodeProviderRoute(
+                                models_file=tasks_dir / "models.yml",
+                                network="loopback",
+                            ),
+                            environment={"POLICY_KEY": "secret"},
+                        )
+                    ),
                 ),
                 mock.patch.object(adapter, "run_episode", return_value=failure),
             ):

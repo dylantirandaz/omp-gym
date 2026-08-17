@@ -6,6 +6,7 @@ test file. Run `python3 test_temperature.py` to confirm that all tests
 pass.
 """
 test_command = ["python3", "test_temperature.py"]
+expected_cases = 11
 context_files = ["temperature.py", "test_temperature.py"]
 tools = "read,write,bash"
 max_time = "300"

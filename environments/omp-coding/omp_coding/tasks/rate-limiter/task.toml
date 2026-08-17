@@ -8,6 +8,7 @@ to only one file cannot pass. Do not change the test file. Run
 `python3 test_limiter.py` to confirm that all tests pass.
 """
 test_command = ["python3", "test_limiter.py"]
+expected_cases = 16
 context_files = ["window.py", "limiter.py", "test_limiter.py"]
 tools = "read,write,bash"
 max_time = "300"

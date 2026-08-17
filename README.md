@@ -360,9 +360,10 @@ Hardware: Apple M3, Metal through MLX, 12124 MiB.
 
 `environments/omp-coding/` is a Verifiers 0.3.0 evaluation
 environment. Its wheel includes all 18 public tasks. Each rollout
-creates a temporary omp provider configuration, runs one real omp
-episode against the Verifiers policy endpoint, and returns the exact
-binary `EpisodeRecord.reward`.
+installs a temporary provider file in a private omp home, runs one
+real omp episode against the Verifiers policy endpoint, and returns
+the exact binary `EpisodeRecord.reward`. A loopback endpoint gets
+loopback access only. A remote endpoint gets outbound HTTPS.
 
 The host must have `omp` on `PATH`. The package does not change the
 user's omp configuration. Build and test the wheel before publication,

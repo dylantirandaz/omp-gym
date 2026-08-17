@@ -1,6 +1,6 @@
 [project]
 name = "omp-gym"
-version = "0.3.0"
+version = "0.3.1"
 description = "Training environment for coding models, built on the omp tool surface."
 license = "MIT"
 requires-python = ">=3.11"

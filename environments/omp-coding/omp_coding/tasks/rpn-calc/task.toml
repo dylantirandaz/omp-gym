@@ -5,6 +5,7 @@ Bad input returns an RpnError value. Do not change the test file. Run
 `python3 test_rpn.py` to confirm that all tests pass.
 """
 test_command = ["python3", "test_rpn.py"]
+expected_cases = 11
 context_files = ["rpn.py", "test_rpn.py"]
 tools = "read,write,bash"
 max_time = "300"

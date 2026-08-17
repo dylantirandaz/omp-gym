@@ -43,7 +43,7 @@ class PlanTest(unittest.TestCase):
             16.419662571199012,
         ]
         self.assertEqual(len(plan), 6)
-        for value, want in zip(plan, expected):
+        for value, want in zip(plan, expected, strict=True):
             self.assertAlmostEqual(value, want, places=9)
 
     def test_delays_stay_inside_the_jitter_band(self) -> None:

@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from omp_gym.runner import (
     EpisodeFailure,
+    EpisodeProviderRoute,
     _baseline_passed,
     _build_eval_dir,
     _changed_protected_files,
@@ -18,9 +20,11 @@ from omp_gym.runner import (
     _find_session_file,
     _overlay_files,
     _partial_credit,
+    _prepare_agent_home,
     _protected_files,
     _run_grouped,
     _score_test_run,
+    _session_provider_error,
     _test_environment,
     _test_evidence,
     run_episode,
@@ -111,6 +115,83 @@ class EpisodeEnvironmentTests(unittest.TestCase):
 
         self.assertIn("Fix app.py.", prompt)
         self.assertIn("File: app.py\nanswer = 0", prompt)
+
+
+class ProviderConfigurationTests(unittest.TestCase):
+    def test_private_home_uses_explicit_models_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source_home = root / "source-home"
+            source_agent = source_home / ".omp" / "agent"
+            source_agent.mkdir(parents=True)
+            (source_agent / "models.yml").write_text("source\n")
+            supplied_models = root / "supplied-models.yml"
+            supplied_models.write_text("supplied\n")
+
+            with unittest.mock.patch(
+                "omp_gym.runner.Path.home",
+                return_value=source_home,
+            ):
+                home = _prepare_agent_home(
+                    root / "episode",
+                    "omp-gym/model",
+                    EpisodeProviderRoute(
+                        models_file=supplied_models,
+                        network="open-443",
+                    ),
+                )
+
+            installed_models = home / ".omp" / "agent" / "models.yml"
+            self.assertEqual(installed_models.read_text(), "supplied\n")
+            self.assertEqual((source_agent / "models.yml").read_text(), "source\n")
+
+    def test_empty_assistant_session_reports_provider_error(self) -> None:
+        session = (
+            json.dumps(
+                {
+                    "type": "message",
+                    "message": {
+                        "role": "assistant",
+                        "content": [],
+                        "stopReason": "error",
+                        "errorMessage": "Unable to connect.",
+                    },
+                }
+            ).encode()
+            + b"\n"
+        )
+
+        self.assertEqual(_session_provider_error(session), "Unable to connect.")
+
+    def test_assistant_tool_work_survives_an_earlier_provider_error(self) -> None:
+        messages = [
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "content": [],
+                    "stopReason": "error",
+                    "errorMessage": "Temporary provider error.",
+                },
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "toolCall",
+                            "name": "read",
+                            "arguments": {"path": "app.py"},
+                        }
+                    ],
+                    "stopReason": "toolUse",
+                },
+            },
+        ]
+        session = b"\n".join(json.dumps(message).encode() for message in messages)
+
+        self.assertIsNone(_session_provider_error(session))
 
 
 class PartialCreditTests(unittest.TestCase):

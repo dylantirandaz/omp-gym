@@ -39,7 +39,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import IO
+from typing import IO, Literal
 
 import yaml
 
@@ -996,6 +996,14 @@ def score_solution(
 
 
 @dataclass(frozen=True)
+class EpisodeProviderRoute:
+    """An explicit provider file and its required network boundary."""
+
+    models_file: Path
+    network: Literal["loopback", "open-443"]
+
+
+@dataclass(frozen=True)
 class EpisodeRecord:
     """Result of one completed episode."""
 
@@ -1048,6 +1056,46 @@ def _find_session_file(session_dir: Path) -> Path | None:
     return candidates[0]
 
 
+def _session_provider_error(session_bytes: bytes) -> str | None:
+    """Return the final provider error when no assistant work exists."""
+    last_error: str | None = None
+    has_assistant_work = False
+    for raw_line in session_bytes.splitlines():
+        try:
+            value = json.loads(raw_line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(value, dict) or value.get("type") != "message":
+            continue
+        message = value.get("message")
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        if message.get("stopReason") == "error":
+            error_message = message.get("errorMessage")
+            if isinstance(error_message, str) and error_message.strip():
+                last_error = error_message.strip()
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            has_assistant_work = has_assistant_work or bool(content.strip())
+        elif isinstance(content, list):
+            has_assistant_work = has_assistant_work or any(
+                isinstance(block, dict)
+                and (
+                    block.get("type") == "toolCall"
+                    or (
+                        block.get("type") == "text"
+                        and isinstance(block.get("text"), str)
+                        and bool(block["text"].strip())
+                    )
+                )
+                for block in content
+            )
+    if has_assistant_work:
+        return None
+    return last_error
+
+
 def _copy_selected_provider(
     source_file: Path,
     target_file: Path,
@@ -1077,7 +1125,11 @@ def _copy_selected_provider(
     )
 
 
-def _prepare_agent_home(episode_dir: Path, model: str | None = None) -> Path:
+def _prepare_agent_home(
+    episode_dir: Path,
+    model: str | None = None,
+    provider_route: EpisodeProviderRoute | None = None,
+) -> Path:
     """A per-episode HOME with the minimum omp configuration.
 
     config.yml and only the selected custom provider are copied.
@@ -1097,11 +1149,14 @@ def _prepare_agent_home(episode_dir: Path, model: str | None = None) -> Path:
     resolved_model = (
         model if model is not None else _configured_agent_model(target_config)
     )
-    _copy_selected_provider(
-        source / "models.yml",
-        target / "models.yml",
-        resolved_model,
-    )
+    if provider_route is None:
+        _copy_selected_provider(
+            source / "models.yml",
+            target / "models.yml",
+            resolved_model,
+        )
+    else:
+        shutil.copyfile(provider_route.models_file, target / "models.yml")
     return home
 
 
@@ -1112,13 +1167,15 @@ def run_episode(
     extra_env: dict[str, str] | None = None,
     *,
     extra_secret_names: tuple[str, ...] = (),
+    provider_route: EpisodeProviderRoute | None = None,
 ) -> EpisodeRecord | EpisodeFailure:
     """Run one real omp session on the task and score the result.
 
     extra_env is merged into the omp child environment last, so it
     wins over the resolved provider keys. extra_secret_names keeps only
-    explicitly supplied secret variables from that mapping. Callers use
-    both values for per-episode policy routing.
+    explicitly supplied secret variables from that mapping.
+    provider_route installs an explicit provider configuration and
+    sets its network boundary inside the private episode home.
     """
     wall_started = time.monotonic()
     stamp = time.strftime("%Y%m%d-%H%M%S")
@@ -1213,7 +1270,22 @@ def run_episode(
 
     _safe_copytree(snapshot_dir, workspace)
     session_dir.mkdir()
-    agent_home = _prepare_agent_home(episode_dir, model)
+    if provider_route is not None and not provider_route.models_file.is_file():
+        return EpisodeFailure(
+            task=task.name,
+            reason=f"provider error: model file {provider_route.models_file} is missing",
+        )
+    try:
+        agent_home = _prepare_agent_home(
+            episode_dir,
+            model,
+            provider_route,
+        )
+    except OSError as error:
+        return EpisodeFailure(
+            task=task.name,
+            reason=f"provider error: cannot install model file: {error}",
+        )
     agent_tmp = fresh_home(episode_dir, "agent-tmp")
     resolved_model = (
         model
@@ -1247,13 +1319,17 @@ def run_episode(
     if model is not None:
         command.extend(["--model", model])
 
-    local_model = _is_local_model(resolved_model, extra_env)
+    agent_network = (
+        provider_route.network
+        if provider_route is not None
+        else ("loopback" if _is_local_model(resolved_model, extra_env) else "open-443")
+    )
     agent_profile = (
         write_sandbox_profile(
             profiles_dir,
             "agent.sb",
             writable=(workspace, session_dir, agent_home, agent_tmp),
-            network="loopback" if local_model else "open-443",
+            network=agent_network,
         )
         if use_sandbox
         else None
@@ -1276,6 +1352,7 @@ def run_episode(
         sandbox_profile=agent_profile,
         limits=ResourceLimits(cpu_seconds=deadline + 60),
     )
+    (agent_home / ".omp" / "agent" / "models.yml").unlink(missing_ok=True)
     duration = time.monotonic() - started
     (episode_dir / "events.jsonl").write_text(omp_run.stdout)
     if omp_run.stderr:
@@ -1310,6 +1387,12 @@ def run_episode(
     session_sha = hashlib.sha256(session_bytes).hexdigest()
     session_copy = episode_dir / "session.jsonl"
     session_copy.write_bytes(session_bytes)
+    provider_error = _session_provider_error(session_bytes)
+    if provider_error is not None:
+        return EpisodeFailure(
+            task=task.name,
+            reason=f"provider error: {provider_error}",
+        )
 
     if workspace_digest(task.workspace) != pristine_digest:
         return EpisodeFailure(

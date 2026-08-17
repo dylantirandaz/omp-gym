@@ -32,11 +32,15 @@ omp --version
 
 For each rollout, the environment creates a temporary `models.yml`. This file
 points `omp` at `client.config.api_base_url`. It uses
-`client.config.api_key_var` and the configured static headers. The API key
-value stays in the child process environment and out of the rollout state.
-Static headers are in the temporary file. The file has mode `0600` and is
-removed after the episode. The environment does not change
-`~/.omp/agent/models.yml`.
+`client.config.api_key_var` and the configured static headers. The runner
+copies this file into the private episode home before it starts `omp`. A
+loopback endpoint gets loopback access only. A remote endpoint gets outbound
+HTTPS.
+
+The API key value stays in the child process environment and out of the model
+file and rollout state. The source file has mode `0600`. The runner removes
+the private copy when `omp` exits. The temporary source file is then removed.
+The environment does not change `~/.omp/agent/models.yml`.
 
 ## Tasks
 

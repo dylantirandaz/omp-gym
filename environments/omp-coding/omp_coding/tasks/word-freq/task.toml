@@ -4,6 +4,7 @@ passes. The function counts the words in a text. Do not change the
 test file. Run `python3 test_words.py` to confirm that all tests pass.
 """
 test_command = ["python3", "test_words.py"]
+expected_cases = 7
 context_files = ["words.py", "test_words.py"]
 tools = "read,write,bash"
 max_time = "300"

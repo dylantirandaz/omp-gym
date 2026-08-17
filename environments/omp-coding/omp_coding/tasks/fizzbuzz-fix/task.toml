@@ -5,3 +5,4 @@ to confirm that all tests pass.
 """
 context_files = ["fizzbuzz.py", "test_fizzbuzz.py"]
 test_command = ["python3", "test_fizzbuzz.py"]
+expected_cases = 10

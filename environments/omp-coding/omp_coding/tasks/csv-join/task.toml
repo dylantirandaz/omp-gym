@@ -7,6 +7,7 @@ work; a change to only one file cannot pass. Do not change the test
 file. Run `python3 test_csv_join.py` to confirm that all tests pass.
 """
 test_command = ["python3", "test_csv_join.py"]
+expected_cases = 26
 context_files = ["coerce.py", "join.py", "test_csv_join.py"]
 tools = "read,write,bash"
 max_time = "300"

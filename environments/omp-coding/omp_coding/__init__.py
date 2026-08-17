@@ -21,17 +21,23 @@ import os
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
+from urllib.parse import urlsplit
 
 import verifiers as vf
 from datasets import Dataset
 from verifiers.types import RolloutInput, SamplingArgs
 from verifiers.utils.message_utils import normalize_messages
 
-from omp_gym.runner import EpisodeFailure, EpisodeRecord, run_episode
+from omp_gym.runner import (
+    EpisodeFailure,
+    EpisodeProviderRoute,
+    EpisodeRecord,
+    run_episode,
+)
 from omp_gym.task import TaskLoadError, TaskSpec, load_task
 from omp_gym.trajectory import (
     AssistantStep,
@@ -55,6 +61,22 @@ FailureClass = Literal[
 ]
 
 
+@dataclass(frozen=True)
+class PolicyRoute:
+    """One private model file and its secret environment."""
+
+    provider_route: EpisodeProviderRoute
+    environment: dict[str, str]
+
+
+def _policy_network(policy_url: str) -> Literal["loopback", "open-443"]:
+    """Select the smallest network boundary for one policy URL."""
+    hostname = urlsplit(policy_url).hostname
+    if hostname in ("localhost", "127.0.0.1", "::1"):
+        return "loopback"
+    return "open-443"
+
+
 @contextmanager
 def policy_environment(
     policy_url: str,
@@ -62,8 +84,8 @@ def policy_environment(
     api_key_var: str,
     api_key: str,
     headers: Mapping[str, str],
-) -> Iterator[dict[str, str]]:
-    """Create an isolated omp model file for one rollout."""
+) -> Iterator[PolicyRoute]:
+    """Create an isolated omp policy route for one rollout."""
     document = {
         "providers": {
             "omp-gym": {
@@ -95,13 +117,13 @@ def policy_environment(
         models_file = Path(temporary_directory) / "models.yml"
         models_file.write_text(json.dumps(document))
         models_file.chmod(0o600)
-        episode_environment = {
-            "OMP_MODELS": str(models_file),
-            "OMP_PROVIDER": "omp-gym",
-            "OMP_MODEL": f"omp-gym/{model}",
-            api_key_var: api_key,
-        }
-        yield episode_environment
+        yield PolicyRoute(
+            provider_route=EpisodeProviderRoute(
+                models_file=models_file,
+                network=_policy_network(policy_url),
+            ),
+            environment={api_key_var: api_key},
+        )
 
 
 def failure_class(reason: str) -> FailureClass:
@@ -361,14 +383,15 @@ class OmpCodingEnv(vf.Environment):
                 api_key_var,
                 api_key,
                 headers,
-            ) as episode_environment:
+            ) as policy_route:
                 result = await asyncio.to_thread(
                     run_episode,
                     loaded,
                     self._runs_dir,
                     f"omp-gym/{model}",
-                    episode_environment,
+                    policy_route.environment,
                     extra_secret_names=(api_key_var,),
+                    provider_route=policy_route.provider_route,
                 )
             if isinstance(result, EpisodeFailure):
                 self._finish_failure(state, result)

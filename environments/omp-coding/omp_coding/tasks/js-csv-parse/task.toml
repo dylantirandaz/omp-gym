@@ -6,6 +6,7 @@ unquoted fields, and the two error messages. Do not change the test
 file. Run `node test_csv.mjs` to confirm that all tests pass.
 """
 test_command = ["node", "test_csv.mjs"]
+expected_cases = 20
 context_files = ["csv.mjs", "test_csv.mjs"]
 tools = "read,write,bash"
 max_time = "300"

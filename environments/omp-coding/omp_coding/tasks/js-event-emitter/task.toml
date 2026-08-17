@@ -7,6 +7,7 @@ to only one file cannot pass. Do not change the test file. Run
 `node test_emitter.mjs` to confirm that all tests pass.
 """
 test_command = ["node", "test_emitter.mjs"]
+expected_cases = 12
 context_files = ["listeners.mjs", "emitter.mjs", "test_emitter.mjs"]
 tools = "read,write,bash"
 max_time = "300"
