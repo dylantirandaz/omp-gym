@@ -1,0 +1,806 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "number",
+            "value": "42"
+          }
+        }
+      },
+      "id": "nested-array",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "a.b.0.c"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "number",
+            "value": "7"
+          }
+        }
+      },
+      "id": "second-index",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "a.b.1.c"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "c": {
+                "kind": "number",
+                "value": "42"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "object-result",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "a.b.0"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "number",
+            "value": "0"
+          }
+        }
+      },
+      "id": "falsy-number",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "count"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": ""
+          }
+        }
+      },
+      "id": "falsy-string",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "name"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "missing"
+          }
+        }
+      },
+      "id": "missing-key",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "a.x"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "missing"
+          }
+        }
+      },
+      "id": "index-range",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "a.b.2.c"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "missing"
+          }
+        }
+      },
+      "id": "null-value",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "empty"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "missing"
+          }
+        }
+      },
+      "id": "through-null",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "empty.deep"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "missing"
+          }
+        }
+      },
+      "id": "through-number",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "a": {
+                  "fields": {
+                    "b": {
+                      "items": [
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "42"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        {
+                          "fields": {
+                            "c": {
+                              "kind": "number",
+                              "value": "7"
+                            }
+                          },
+                          "kind": "object"
+                        }
+                      ],
+                      "kind": "list"
+                    }
+                  },
+                  "kind": "object"
+                },
+                "count": {
+                  "kind": "number",
+                  "value": "0"
+                },
+                "empty": {
+                  "kind": "none"
+                },
+                "name": {
+                  "kind": "str",
+                  "value": ""
+                }
+              },
+              "kind": "object"
+            },
+            {
+              "kind": "str",
+              "value": "count.digits"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "missing"
+          }
+        }
+      },
+      "id": "null-target",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "none"
+            },
+            {
+              "kind": "str",
+              "value": "a"
+            },
+            {
+              "kind": "str",
+              "value": "missing"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./deep_get.mjs:deepGet"
+        }
+      ]
+    }
+  ],
+  "runtime": "node",
+  "schema_version": 1
+}

@@ -1,97 +1,147 @@
 ---
 name: omp-gym
-description: Operate the omp-gym training loop - run scored episodes, harvest sessions, train LoRA adapters on the Metal GPU, benchmark models, and serve tuned adapters as omp providers. Use when asked to improve, evaluate, or train coding models with this repository.
+description: Operate the Prime Verifiers v1 OMP coding environment. Use it to run sealed coding evaluations, export exact Prime traces, train MLX LoRA adapters on Apple Metal, and compare an adapter with its fixed baseline.
 ---
 
 # omp-gym operator
 
-You operate a training platform for coding models. Every action
-runs through `uv run omp-gym <verb>`.
+Use `omp-coding` version `1.0.0`. Use Prime Verifiers v1 for all rollouts. Do
+not use the removed local runner, model shim, ledger, dashboard, or custom RL
+commands.
 
-## Verbs
+## Install
 
-1. `preflight` — verify the Metal GPU. Run before training.
-2. `run --task tasks/<name> [--model <m>]` — one scored episode.
-   A copied workspace and a real omp session produce test reward,
-   case evidence, partial credit, and baseline improvement.
-   Artifacts go to `runs/<task>-<stamp>/`.
-3. `export [--sessions PATH]` — build `dataset/train.jsonl` and
-   `dataset/valid.jsonl` from scored episodes. Session harvesting
-   is opt-in. Samples use one assistant turn and its context.
-   `--pairs` writes DPO pairs instead.
-4. `train --data dataset --model <mlx-model> --iters N --adapter
-   adapters/<name> [--method sft|dpo] [--resume-adapter FILE]` —
-   LoRA on the Metal GPU. Fails on a non-finite or flat loss curve.
-   Writes `adapters/<name>/train_report.json`.
-5. `bench --models "a,b,c" --tasks tasks --trials N` — model x
-   task grid. Writes `bench-report.md` and `bench-report.jsonl`
-   with pass rate, latency, tokens, and cost. Provider errors are
-   reported separately from task failures.
-6. `serve --adapter adapters/<name> --port 8800` — publish an
-   adapter as an omp provider. Blocks; run it in the background.
-7. `report` — compare adapters and models from the ledger.
-8. `ui --port 8900` — serve the dashboard.
-9. `inspect --prompt "..." --adapter adapters/<name>` — logit lens
-   over every layer. Artifact under `experiments/`.
-10. `sae --adapter adapters/<name>` — tiny SAE on residual
-    activations. Research preview.
-11. `rl --task tasks/<name> [--task tasks/<name> ...]
-    --adapter adapters/<name> --group K --iters N` — REINFORCE
-    with a normalized group-mean baseline over live episodes.
-12. `mint` — write runnable tasks from failed sessions into
-    `tasks/minted/`.
-13. `import --from claude|codex` — import other agents' sessions.
-14. `clusters` — failure-mode counts with example artifacts.
-15. `doctor` / `init` — environment checks; first scored episode.
-16. `publish --push` — render and commit the ledger page, then
-    push local `main` to `origin`.
-    GitHub Pages setup stays manual.
+Install the environment in the Prime tool environment. Do not let an active
+workspace environment change the install target:
 
-## Procedure for improving the model
+```sh
+env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT \
+  prime --plain env install omp-coding --path environments
+```
 
-1. Read `experiments/ledger.jsonl` before proposing anything. Do
-   not repeat recorded experiments.
-2. Add tasks under `tasks/<name>/` when the suite cannot separate
-   models (task.toml plus a workspace where the test fails).
-3. Collect episodes with `bench --trials N`. Winners feed the
-   dataset on the next `export`.
-4. Train a new adapter version. For DPO, resume from the SFT
-   adapter.
-5. Serve the new adapter and bench it against the previous version
-   and one API model.
-6. Report reward, loss, cost, and latency deltas with exact
-   numbers from the ledger. Do not claim improvement without a
-   bench delta.
+Install the local Metal option when training is necessary:
+
+```sh
+uv sync --package omp-coding --extra metal
+uv run --package omp-coding --extra metal omp-coding-train preflight
+```
+
+The preflight must report `metal`, `gpu:0`, the device name, and a checked
+matrix result. Never use CPU as a replacement.
+
+## Evaluate
+
+Use `eval`, which is the Prime Verifiers v1 evaluation command in the installed
+Prime tool environment:
+
+```sh
+eval omp-coding \
+  --model MODEL_ID \
+  --no-push \
+  --no-rich \
+  --env.taskset.split train \
+  --client.base-url OPENAI_BASE_URL \
+  --client.api-key-var API_KEY_VARIABLE \
+  --max-concurrent 1
+```
+
+Use 10 train tasks for trace collection. Use 4 validation tasks for model
+selection. Use 4 holdout tasks only for the final result. Keep task count,
+rollout count, sampling values, token limits, and model endpoint fixed for each
+comparison.
+
+Each rollout must run the real OMP 17.2.15 process. OMP must call the five host
+tools through the Verifiers route. A fresh container must grade the output.
+Import success and task setup are not evaluation proof.
+
+## Export training data
+
+Use successful train and validation result directories:
+
+```sh
+uv run --package omp-coding --extra metal omp-coding-train export \
+  outputs/TRAIN_RUN outputs/VALIDATION_RUN \
+  --output dataset/VERSION
+```
+
+The exporter accepts only a `tests` reward of `1.0`. It writes one sample for
+each sampled assistant turn. It keeps the exact branch, message order, tool
+schemas, tool call identifiers, tool result identifiers, and tool arguments.
+It requires train and validation samples.
+
+Do not train on holdout traces. Do not train on failed or incomplete traces.
+
+## Train
+
+Use a new adapter path for each run:
+
+```sh
+uv run --package omp-coding --extra metal omp-coding-train run \
+  --data dataset/VERSION \
+  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+  --adapter adapters/VERSION \
+  --iters 20 \
+  --max-seq-length 4096 \
+  --num-layers 8
+```
+
+The command runs the Metal preflight again. It uses the selected model tokenizer
+and keeps only complete samples that fit the sequence limit. It reports the kept
+and removed sample counts. It trains with prompt masking. Each reported loss
+must be finite. The command installs `adapters.safetensors` and
+`adapter_config.json` only after all checks pass.
+
+## Serve and compare
+
+MLX-LM 0.30 does not apply its command-line adapter when a request names a
+model. Fuse the adapter before evaluation. Do not put a model shim in front of
+the server:
+
+```sh
+uv run --package omp-coding --extra metal python -c \
+  "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/Qwen2.5-0.5B-Instruct-4bit')"
+uv run --package omp-coding --extra metal python -m mlx_lm fuse \
+  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+  --adapter-path adapters/VERSION \
+  --save-path adapters/VERSION-fused
+uv run --package omp-coding --extra metal python -m mlx_lm server \
+  --model adapters/VERSION-fused \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --max-tokens 4096
+```
+
+Run `eval omp-coding --model default_model` against
+`http://127.0.0.1:8080/v1`. Serve the unfused base model for the baseline.
+Use `default_model` for both runs. Use the same MLX version, server settings,
+task split, and sampling settings. A saved adapter and a lower training loss
+do not prove an improvement.
+
+Report these values:
+
+- Exact evaluation commands.
+- OMP version and arm64 image digest.
+- Metal backend, `gpu:0`, device name, MLX version, and dtype.
+- Train, validation, and holdout rewards.
+- Passed and total sealed case counts.
+- Token use and elapsed time from Prime traces.
+- Adapter path and byte count.
+
+Claim an improvement only when the adapter has a higher sealed validation or
+holdout reward than the fixed base model.
 
 ## Remote Metal jobs
 
-Use the registered `tailscale-compute` MCP server for long Metal
-jobs when a remote Apple GPU is available.
-
-1. Call `compute_status`. Check the target, platform, architecture,
-   memory, storage, and active jobs.
-2. Use `.tailscale-compute-ignore` to include only the required
-   dataset and source adapter. Never include `.env`.
-3. Call `compute_run` with `uv sync && uv run omp-gym preflight`.
-   The remote workload must report the selected Metal device.
-4. Call `compute_job_start` for training. Set
-   `PYTHONUNBUFFERED=1` so that job logs show live progress. Split
-   work that can exceed the 12-hour job limit into complete runs.
-5. Read `compute_job_status` and `compute_job_logs`. Keep the byte
-   offset from each log result. Do not stop another trainer until
-   the remote log shows the real model, source adapter, and training
-   loop.
-6. Call `compute_fetch` only after a successful terminal state.
-   Fetch the adapter and `train_report.json`.
-7. Serve and benchmark the fetched adapter against the prior
-   adapter. A completed training job is not proof of improvement.
+Read the `tailscale-compute-fleet` skill before remote work. Select an Apple
+Metal node. Run the same preflight and training command there. Do not copy
+`.env`. Fetch the adapter only after the job has a successful terminal state.
+Then run the fixed comparison through Prime Verifiers v1.
 
 ## Rules
 
-- Keys live in the gitignored `.env`. Never print or commit them.
-- Training must pass the GPU preflight. Do not fall back to CPU.
-- Judge an episode by test reward, case evidence, and baseline
-  improvement. Do not use claims from model output.
-- `runs/`, `dataset/`, `adapters/`, `experiments/` stay out of git.
-- Write the session summary early and update it as you work. The
-  clock can cut the session at any time.
+- Keep keys in the ignored `.env` file. Never print or commit them.
+- Keep `outputs/`, `dataset/`, and `adapters/` out of Git.
+- Do not expose sealed task cases to the model.
+- Do not change the device, model, precision, task split, or workload to make a
+  failed run pass.
+- Use the reward from the fresh verifier container. Do not trust model claims.

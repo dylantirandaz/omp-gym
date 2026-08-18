@@ -1,0 +1,36 @@
+schema_version = 2
+task_id = "omp-gym/csv-total"
+task_revision = 1
+family = "csv-total"
+split = "validation"
+prompt = """Implement `total_column` in `report.py`. Read the specified CSV file. Return the sum of the specified numeric column. Do not change `data.csv`."""
+runtime = "python"
+runtime_version = "3.11.2"
+max_time_seconds = 300
+token_budget = 65536
+expected_cases = 2
+editable_files = ["report.py"]
+context_files = ["report.py", "data.csv", "test_report.py"]
+source = "https://github.com/dylantirandaz/omp-gym"
+source_revision = "task-suite-v2"
+license = "MIT"
+sensitive_data = "public"
+seed = 0
+
+[environment]
+image = "node@sha256:934240a162082fd8b8a2f90cd5114446443f1eba1c5378f6687167ca405e6584"
+image_digest = "sha256:934240a162082fd8b8a2f90cd5114446443f1eba1c5378f6687167ca405e6584"
+os = "linux"
+architecture = "arm64"
+network = "none"
+cpus = 1.0
+memory_bytes = 805306368
+pids = 64
+workspace_bytes = 268435456
+temp_bytes = 67108864
+home_bytes = 16777216
+dependency_lock_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+[verifier]
+protocol = "call-cases-v1"
+cases = "verifier/cases.json"

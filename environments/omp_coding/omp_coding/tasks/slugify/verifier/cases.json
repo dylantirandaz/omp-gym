@@ -1,0 +1,230 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "hello-world"
+          }
+        }
+      },
+      "id": "slug-1",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "Hello World"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "slug:slugify"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "spaces-everywhere"
+          }
+        }
+      },
+      "id": "slug-2",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "  spaces  everywhere  "
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "slug:slugify"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "snake-case-title"
+          }
+        }
+      },
+      "id": "slug-3",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "snake_case_title"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "slug:slugify"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "already-hyphenated"
+          }
+        }
+      },
+      "id": "slug-4",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "Already-Hyphenated"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "slug:slugify"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "symbols-junk"
+          }
+        }
+      },
+      "id": "slug-5",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "Symbols! & Junk?"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "slug:slugify"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "mixed-case-123"
+          }
+        }
+      },
+      "id": "slug-6",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "MiXeD CaSe 123"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "slug:slugify"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "edge-case"
+          }
+        }
+      },
+      "id": "slug-7",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "--edge--case--"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "slug:slugify"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": ""
+          }
+        }
+      },
+      "id": "slug-8",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "slug:slugify"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

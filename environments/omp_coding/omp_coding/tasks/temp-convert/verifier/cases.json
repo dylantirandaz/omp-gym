@@ -1,0 +1,338 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "0C"
+          }
+        }
+      },
+      "id": "convert-1",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "32F"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "100C"
+          }
+        }
+      },
+      "id": "convert-2",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "212F"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "32F"
+          }
+        }
+      },
+      "id": "convert-3",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "0C"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "212F"
+          }
+        }
+      },
+      "id": "convert-4",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "100C"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "-40C"
+          }
+        }
+      },
+      "id": "convert-5",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "-40F"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "14F"
+          }
+        }
+      },
+      "id": "convert-6",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "-10C"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "37C"
+          }
+        }
+      },
+      "id": "convert-7",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "98F"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "invalid value"
+              }
+            },
+            "kind": "object",
+            "type": "temperature:ConvertError"
+          }
+        }
+      },
+      "id": "convert-8",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "12K"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "invalid value"
+              }
+            },
+            "kind": "object",
+            "type": "temperature:ConvertError"
+          }
+        }
+      },
+      "id": "convert-9",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "F32"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "invalid value"
+              }
+            },
+            "kind": "object",
+            "type": "temperature:ConvertError"
+          }
+        }
+      },
+      "id": "convert-10",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "3.5C"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "invalid value"
+              }
+            },
+            "kind": "object",
+            "type": "temperature:ConvertError"
+          }
+        }
+      },
+      "id": "convert-11",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "temperature:convert"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

@@ -1,386 +1,176 @@
 # omp-gym
 
-omp-gym is a training and evaluation toolkit for coding agents. It
-runs the [omp](https://github.com/can1357/oh-my-pi) agent on
-test-scored tasks, records the sessions, converts them to training
-data, and fine-tunes local models on Apple silicon. Trained
-adapters are served back as omp providers, so trained models run
-and score in the same environment as API models.
+`omp-gym` is a coding environment for Prime Verifiers v1. It runs the real
+[Oh My Pi](https://github.com/can1357/oh-my-pi) agent. It records each model
+turn through the Verifiers interception service. It grades changed files in a
+new sealed container.
+
+The active environment is `omp-coding` version `1.0.0`. The old local runner,
+model shim, ledger, dashboard, and custom RL code are not part of this version.
+
+## Data flow
+
+```text
+Prime eval or train
+  -> OmpHarness
+  -> pinned OMP 17.2.15 in an arm64 Linux container
+  -> five OMP tools through an authenticated host route
+  -> bounded task workspace
+  -> fresh verifier container
+  -> structured reward and Prime trace
+```
+
+The five tools are `sandbox_read`, `sandbox_write`, `sandbox_edit`,
+`sandbox_exec`, and `run_tests`. The model cannot read the sealed cases. The
+model can change only the declared task files. Each `run_tests` call grades a
+new snapshot in a different container.
 
 ## Requirements
 
-- macOS on Apple silicon (Metal GPU)
-- omp installed, with at least one configured model provider
-- uv
+- macOS or Linux with Docker.
+- An arm64 host or an arm64 Docker service.
+- Python 3.11, 3.12, or 3.13.
+- Prime CLI 0.6.23.
+- One OpenAI compatible model endpoint.
+- Apple silicon and MLX for local adapter training.
 
 ## Install
 
-```sh
-uv sync
-```
-
-## Quickstart
+Install the environment in the Prime tool environment. Remove active virtual
+environment variables so that Prime does not install it only in this workspace:
 
 ```sh
-uv run omp-gym preflight                      # verify the Metal GPU
-uv run omp-gym run --task tasks/fizzbuzz-fix  # one scored episode
-uv run omp-gym bench --models "claude-haiku-4-5,openrouter/moonshotai/kimi-k2" --tasks tasks
-uv run omp-gym export                         # build the dataset
-uv run omp-gym train --model mlx-community/Qwen2.5-3B-Instruct-4bit \
-  --iters 200 --adapter adapters/v3 --max-seq-length 2048
-uv run omp-gym serve --adapter adapters/v3 --port 8800
-uv run omp-gym report                         # compare adapters and models
-uv run omp-gym ui                             # dashboard on :8900
+env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT \
+  prime --plain env install omp-coding --path environments
 ```
 
-## Choose your model
-
-The platform trains and serves any MLX-format open model. Write
-one line into a `gym.toml` file at the repository root:
-
-```toml
-model = "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
-```
-
-The value is a Hugging Face repository id or a local directory
-with an MLX model you provide (for example a model you converted
-with `mlx_lm.convert`). Every verb - `train`, `serve`, `gate`,
-`export`, `rl`, `inspect`, `sae`, `steer` - uses it as the
-default model. Each `--model`, `--base-model`, or `--tokenizer`
-flag still overrides it per command. Without `gym.toml` the
-default is `mlx-community/Qwen2.5-Coder-3B-Instruct-4bit`.
-
-## Concepts
-
-**Task.** A directory with `task.toml` and `workspace/`. The
-workspace is a repository state where the test command fails. The
-prompt asks the agent to make the tests pass.
-
-**Episode.** One omp run on a task in a copied workspace. Reward
-1.0 requires exit 0 and a positive passed-case count. A failed
-test run can also record partial credit. RL uses improvement over
-the pre-agent baseline when that value is available.
-
-**Ledger.** `experiments/ledger.jsonl`. Every command appends one
-JSON line with its config, metrics, and artifact paths. The report
-command, the dashboard, and the operator all read this file.
-
-**Sample.** One assistant turn with its context window, exported
-for SFT. The exporter measures tokens with the trainee tokenizer
-and never truncates the completion.
-
-**Pair.** A chosen and a rejected assistant turn for the same task
-prompt, exported for DPO. Chosen turns come from episodes with
-reward 1.0. Rejected turns come from episodes that made real
-attempts and failed. Provider errors are excluded.
-
-**Adapter.** LoRA weights trained on the Metal GPU. `serve`
-publishes an adapter as an omp provider, so `bench` scores it like
-an API model.
-
-## Commands
-
-`preflight` — verify the Metal GPU. Run before training. Exits
-nonzero when the GPU cannot run a checked operation.
-
-`run --task DIR [--model M]` — run one episode. Artifacts go to
-`runs/`.
-
-`bench --models a,b,c [--trials N] [--tasks DIR]` — run the model
-x task grid. Writes a markdown report and a JSONL row set.
-Provider errors are reported separately from task failures.
-
-`export [--pairs] [--out DIR] [--sessions PATH]` — write the
-dataset from scored episodes. Session harvesting is opt-in: name a
-sessions path to include it, and review what you include. Bench
-pass rates count every scheduled episode; error rows stay in the
-denominator. `--pairs` writes DPO preference pairs split by task.
-
-`train --model M --iters N --adapter DIR [--num-layers N|all]
-[--learning-rate R] [--method sft|dpo] [--resume-adapter FILE]`
-— train LoRA weights
-on the Metal GPU. SFT trains the last 16 layers by default. Set
-`--num-layers all` to train all layers. `sft` uses mlx-lm. `dpo`
-uses a native MLX sigmoid-DPO loop and requires `--resume-adapter`.
-Training fails when a loss or tensor is not finite, when the loss
-does not decrease, or when the adapter file is not written.
-
-`serve --adapter DIR [--port N]` — serve an adapter behind an
-OpenAI-compatible endpoint and register it as an omp provider.
-Blocks until interrupted.
-
-`improve --goal "..." [--budget N] [--max-time S]` — run an
-operator agent that plans and executes experiments through the
-commands above. The operator writes a summary to its work
-directory.
-
-`report` — render adapter and model comparisons from the ledger.
-
-`ui [--port N]` — serve the dashboard. Read-only. Shows the
-models leaderboard, adapters, episodes, failure clusters, SAE
-features, and training curves for every adapter that has a
-recorded loss series. Five panels are interactive:
-
-- Run monitor: every `train_report.json` with its loss curve,
-  plus a live view of `runs/live-train.log`. Mirror a remote
-  trainer log to that file to follow loss, tokens per second,
-  and peak memory while the job runs.
-- Bench matrix: the run x task grid from the ledger and from
-  fetched `*report*.jsonl` row files. Amber columns are the
-  sealed holdout tasks. Green cells pass, red cells fail.
-- Lens diff: type a prompt and an adapter directory; the panel
-  shows the base lens and the adapter lens side by side and
-  marks each layer where the top prediction diverges.
-- SAE explorer: per-token feature activations as a heat row,
-  the strongest features as chips, and a steer slider that
-  compares an unsteered and a steered completion live.
-- Replay: select an episode, scrub through it step by step,
-  watch full-file writes build up, and compare two episodes of
-  the same task side by side.
-
-`inspect --prompt "..." [--adapter DIR]` — logit-lens a local
-model: the top predicted tokens after every decoder layer. Writes
-a JSON artifact under `experiments/`.
-
-`sae [--data DIR] [--adapter DIR]` — train a tiny sparse
-autoencoder on residual-stream activations from the dataset.
-Research preview. Writes a feature report under `experiments/`.
-
-`rl --task DIR [--task DIR ...] --adapter DIR --group K --iters N`
-— REINFORCE with a normalized group-mean baseline over live
-episodes. A seeded schedule supports a mix of tasks. Each
-iteration serves the current adapter, samples K episodes in
-sequence, scores them with the task tests, and updates every
-captured assistant turn. Partial rewards measure improvement over
-the pre-agent baseline. `--kl-beta` adds a reference-policy term.
-
-`mint [--limit N]` — scan sessions for failure signals (user
-corrections and late test failures) and write runnable tasks into
-`tasks/minted/`. Workspaces use the latest file content from read
-and write tool calls. Paths are relative to the session working
-directory. Device URLs are skipped.
-
-`import --from claude|codex` — convert another agent's session
-store to the omp session schema under `imported/`. Export with
-`--sessions imported`.
-
-`clusters` — count keyword-frequency signals over sessions and
-failed episodes (tool errors, edit mismatches, provider errors,
-correction phrases, abandonment phrases). The counts are keyword
-hits, not verified failure modes. Writes
-`experiments/clusters.json`; the dashboard shows it.
-
-`doctor` — check omp, uv, Metal GPU, keys, sessions, disk. Prints
-the fix for each failure.
-
-`init` — doctor plus one scored episode with the default model.
-
-`publish [--push]` — render the ledger report to
-`docs/index.html`. With `--push`, commit only that file, then push
-local `main` to `origin`.
-GitHub Pages setup stays a manual step.
-
-## Serve, in the omp UI
-
-A served adapter appears in the omp model picker like any other
-provider, marked free.
-
-The shim in front of the model server parses the model's text into
-OpenAI tool calls, because the mlx-lm server drops tool calls when
-a request carries a `tools` parameter. Three output envelopes are
-accepted: `<tool_call>` blocks, fenced ```json blocks, and bare
-JSON objects.
-
-## Provider keys
-
-Put provider keys in `.env` at the project root (`KEY=VALUE`
-lines). The file is gitignored. A remote episode receives only
-the key names for its resolved provider. A local-model episode
-receives no provider key. Other credential-shaped variables stay
-out. A malformed line stops the run with the file and line number.
-
-The remote-agent sandbox permits outbound HTTPS because Seatbelt
-cannot select DNS hosts. Thus, an untrusted task can send the
-selected provider key to another HTTPS host. Use a provider key
-with a hard spend limit.
-
-## Trust boundary
-
-On macOS, isolation is on by default. Each agent and test command
-runs under a deny-default `sandbox-exec` profile. The agent can
-write only its episode workspace, session, home, and temporary
-directories. A remote model gets outbound HTTPS. A local model
-gets loopback access only. Baseline, canary, and evaluation
-commands get no network and no provider key.
-
-Each child gets CPU, file-size, open-file, and process limits. A
-small launcher applies these limits before it starts the target.
-Linux also gets an address-space limit. macOS does not enforce
-`RLIMIT_AS`, so memory isolation needs a virtual machine. The full
-process group stops at the deadline, on excess output, and after
-normal exit.
-
-The run fails when `sandbox-exec` is not available. Set
-`OMP_GYM_SANDBOX=0` only to accept an unsandboxed run explicitly.
-
-The harness also uses these reward controls:
-
-- Tests run in a fresh directory, not in the agent workspace.
-  The directory gets pristine test files and selected solution
-  files. Planted hook files do not cross this boundary.
-- Every task runs a pre-agent baseline. A task that already passes
-  is an error.
-- Test files are hashed. An episode that changes them scores zero.
-- Reward needs positive evidence. Exit 0 without a passed-case
-  count scores zero.
-
-`sandbox-exec` is deprecated and gives a process boundary, not a
-virtual-machine boundary. The remote agent also has one provider
-key and HTTPS access. Solution code runs in the test process and
-can try to forge output. Use a disposable VM for untrusted tasks,
-public services, or multi-tenant work.
-
-## Data locations
-
-`runs/`, `dataset*/`, `imported/`, `adapters/`, `experiments/`,
-`holdout-results/`, `tasks/minted/`, `gym.toml`, and `.env` are
-gitignored. Minted tasks stay local because they are rebuilt from
-session transcripts and can embed private work. The exporter and
-the minter redact credential-shaped text, but redaction is a
-filter, not a guarantee: review before you publish anything.
-Episodes contact the configured model provider, as any omp run
-does.
-
-## Known limits
-
-- Bench numbers use one trial per cell unless you raise
-  `--trials`; treat single-trial numbers as samples, not scores.
-- `rl` is REINFORCE with a normalized group-mean baseline and an
-  optional KL term. It applies the summed log-probability to every
-  captured assistant turn. It does not use PPO or GRPO clipping.
-- Exported trajectories are synthetic reconstructions: the last
-  edit per file becomes a full-file write, and failed calls drop.
-  They are cleaner than the real behavior that produced them.
-- RL log-probabilities come from the raw sampled text captured at
-  the server, re-encoded with the tokenizer. Exact sampled token
-  ids would need server-side logprob capture.
-- `gate` is a first-pass detector built on hand-picked leak
-  markers and one tuned threshold, not a general memorization
-  test.
-- The numbers under "Measured results" come from local runs;
-  the artifacts behind them are gitignored, so they are claims
-  about this machine, not reproducible from the repository.
-
-## Measured results
-
-Hardware: Apple M3, Metal through MLX, 12124 MiB.
-
-- Bench: 3 tasks x 7 models. Every API model passed every task.
-  kimi-k2 used the fewest tokens per solve (36,378).
-  cerebras/gpt-oss-120b was fastest (7.0 s mean) and cheapest
-  ($0.0189 for 3 tasks). The suite is too easy to rank API models
-  on capability.
-- SFT: Qwen2.5-3B-Instruct-4bit, 200 iterations, 21,952 samples.
-  Train loss 2.058 -> 1.404. Validation loss 2.151 -> 2.001.
-  42 minutes.
-- DPO: 26 pairs, 36 iterations. Loss 0.695 -> 0.000 in 176 s.
-  Bench after DPO matched bench before DPO: 26 pairs did not
-  change episode behavior.
-- Operator: one session refreshed the dataset, identified the
-  cause of the local models' 0% pass rate (the v3 run covered
-  about 1% of the dataset), and proposed the next experiment with
-  decision metrics.
-- Inspect: logit lens over the tuned 3B adapter shows its 36
-  layers forming the prediction "the" from context tokens; the
-  artifact is on the dashboard.
-- SAE preview: 4,096 features over 68,035 residual tokens of the
-  tuned 0.5B; loss 0.307 -> 0.135 in 51 s. Most active features
-  fire densely; the preview labels itself as such.
-- Retrain: v5 resumes v3 with 2x coverage (200 more iters, clean
-  loss 2.340 -> 0.884). The 3B policy still prefers chat over
-  tool calls at this coverage. The shim now accepts a fourth
-  envelope — a fenced `python3 test_x.py` / `pytest` command
-  becomes a bash tool call — because that is the exact
-  near-miss format the model produced in a real episode.
-- Dataset signal: 21,039 train samples are unique. 21,015 samples
-  contain tool calls and only 24 are prose-only. v3 plus v5 saw
-  about 400 samples, which is less than 2% of this train set.
-- RL: earlier group-relative rounds ran on fizzbuzz-fix with the
-  served 0.5B policy. Graded rewards (0.7 = 7 of 10 cases) arrived
-  correctly. The group showed no variance, so no update happened
-  and the ledger says so. At temperature 1.0, the overfit adapter
-  emitted empty turns. The 0.7 partial reward came from the
-  unmodified workspace, which passed 7 of 10 cases. A group-mean
-  update cannot learn when the policy gives no trainable output.
-- RL on v5: three parallel rollouts overloaded the single-request
-  MLX server. Two rollouts were lost, but the old code accepted one
-  reward as a full group. Rollouts are now serial and every rollout
-  must return a trainable assistant turn. The same Apple M3 run
-  completed with three rewards: `[0.7, 0.7, 0.7]`. Direct reward
-  comparison found no variance and skipped the update. This also
-  prevents float round-off from starting a false update and loading
-  a second 3B model into memory.
-- Import: 968 Codex sessions converted to the omp schema; export
-  with them grew the train set from 19,753 to 47,683 samples.
-- Mint: tasks mined from real failed sessions run end-to-end
-  (minted-2: reward 1.0, 10/10 tests). Workspaces are rebuilt
-  from read and write tool calls, keyed to the session's working
-  directory, with the final content winning. Test commands are
-  validated against the reconstructed files; a `-k` selector
-  whose names do not appear is stripped.
-- Clusters: 2,040 tool errors, 497 edit mismatches, 313 provider
-  errors, 29 user corrections over the harvest.
-
-## Design decisions and limits
-
-- Minted workspaces are reconstructed from both read and write
-  tool calls, keyed to the session's working directory. The
-  latest content of each file wins. Test commands are validated
-  against the reconstructed files; a `-k` selector whose names
-  do not appear is stripped. Tasks whose dependencies extend past
-  what the session touched are labeled `partial` and may need
-  their original repo to pass.
-- Harvested sessions go through a quality filter: sessions that
-  ended as failures do not enter the SFT dataset. Pass
-  `--no-quality-filter` to include them. Codex imports carry an
-  error signal only when the rollout recorded one. DPO pairs
-  still use losing episodes by design.
-- Thinking blocks are parsed and dropped; they never enter the
-  dataset.
-- Tool results longer than 4000 characters keep the head and the
-  tail with an elision marker; the middle is dropped, because the
-  error output lives at the end.
-- The exporter can remove the middle of long prose. A sample that
-  is still over the token limit is dropped and counted.
-- The dashboard is read-only and local. The training chart draws
-  real loss curves only for adapters trained after series
-  recording was added (v6 onward).
-
-## Prime Intellect Environments Hub
-
-`environments/omp-coding/` is a Verifiers 0.3.0 evaluation
-environment. Its wheel includes all 18 public tasks. Each rollout
-installs a temporary provider file in a private omp home, runs one
-real omp episode against the Verifiers policy endpoint, and returns
-the exact binary `EpisodeRecord.reward`. A loopback endpoint gets
-loopback access only. A remote endpoint gets outbound HTTPS.
-
-The host must have `omp` on `PATH`. The package does not change the
-user's omp configuration. The public environment is
-[`dylantirandaz/omp-coding`](https://app.primeintellect.ai/dashboard/environments/dylantirandaz/omp-coding).
-Install version 0.3.3 with:
+Install the Metal training option in this workspace:
 
 ```sh
-prime env install dylantirandaz/omp-coding@0.3.3
+uv sync --package omp-coding --extra metal
+uv run --package omp-coding --extra metal omp-coding-train preflight
 ```
 
-Use the Prime CLI installer. It adds the two immutable Git requirements
-that the wheel declares. For a new release, build and test the wheel first.
-Then run:
+The preflight must report `metal`, `gpu:0`, and the Apple device name. It runs
+one checked matrix operation. It does not replace a training run.
+
+## Evaluate
+
+The package has 18 public tasks. The task splits are fixed: 10 train tasks, 4
+validation tasks, and 4 holdout tasks.
+
+Run one validation task through OpenRouter:
 
 ```sh
-prime env push --path environments/omp-coding --visibility PUBLIC
+set -a
+. .env
+set +a
+
+eval omp-coding \
+  --model openai/gpt-4.1-mini \
+  --num-tasks 1 \
+  --no-push \
+  --no-rich \
+  --env.taskset.split validation \
+  --client.base-url https://openrouter.ai/api/v1 \
+  --client.api-key-var OPENROUTER_API_KEY \
+  --max-concurrent 1
 ```
 
-See `environments/omp-coding/README.md` for the local one-rollout
-command and the pinned API assumptions.
+Run the full train split by removing `--num-tasks 1`. Use `validation` for
+model selection. Use `holdout` only for the final comparison.
+
+Each result directory contains `traces.jsonl`. Each trace includes the exact
+model requests, model responses, tool calls, tool results, token use, reward,
+and task data.
+
+## Train on Apple Metal
+
+First, collect successful Prime v1 traces from train and validation runs. Then
+export one sample for each sampled assistant turn:
+
+```sh
+uv run --package omp-coding --extra metal omp-coding-train export \
+  outputs/TRAIN_RUN outputs/VALIDATION_RUN \
+  --output dataset/v1
+```
+
+The exporter keeps tool schemas, tool call identifiers, tool result
+identifiers, branch order, and message order. It accepts only traces with a
+`tests` reward of `1.0`. It requires train and validation samples.
+
+Train one LoRA adapter on the Metal GPU:
+
+```sh
+uv run --package omp-coding --extra metal omp-coding-train run \
+  --data dataset/v1 \
+  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+  --adapter adapters/omp-coding-v1 \
+  --iters 20 \
+  --max-seq-length 4096 \
+  --num-layers 8
+```
+
+The command calls the shared Metal preflight first. It uses the selected model
+tokenizer. It keeps only complete samples that fit the sequence limit, and it
+reports the kept and removed sample counts. It uses MLX LoRA with prompt
+masking. It fails if a reported loss is not finite or if MLX does not write a
+complete adapter. It installs the adapter only after all checks pass.
+
+Fuse the adapter before the comparison. MLX-LM 0.30 does not apply its
+command-line adapter when the request names a model:
+
+```sh
+uv run --package omp-coding --extra metal python -c \
+  "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/Qwen2.5-0.5B-Instruct-4bit')"
+uv run --package omp-coding --extra metal python -m mlx_lm fuse \
+  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+  --adapter-path adapters/omp-coding-v1 \
+  --save-path adapters/omp-coding-v1-fused
+uv run --package omp-coding --extra metal python -m mlx_lm server \
+  --model adapters/omp-coding-v1-fused \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --max-tokens 4096
+```
+
+Run `eval omp-coding --model default_model` against
+`http://127.0.0.1:8080/v1`. Serve the unfused base model for the baseline.
+Use `default_model` for both runs. Use the same task split, task count,
+sampling values, and limits. Do not claim an improvement unless the adapter
+has a higher sealed reward on the fixed validation or holdout set.
+
+## Task contract
+
+Each task is in `environments/omp_coding/omp_coding/tasks`. Each task declares:
+
+- A fixed task and revision identifier.
+- A train, validation, or holdout split.
+- A pinned arm64 Linux image.
+- CPU, memory, process, disk, home, and time limits.
+- Public context files and editable files.
+- One sealed structured case file.
+- Source, source revision, license, and data class.
+
+The task loader rejects unknown fields, links, special files, wrong image data,
+wrong runtime data, duplicate identifiers, invalid limits, and case files in
+the public workspace.
+
+## Verification
+
+Run the local contracts:
+
+```sh
+uv run ruff check environments/omp_coding/omp_coding environments/omp_coding/tests
+uv run --package omp-coding python -m unittest discover \
+  -s environments/omp_coding/tests -p 'test_v1.py'
+```
+
+Run the real Docker path:
+
+```sh
+uv run --package omp-coding python environments/omp_coding/tests/integration_runtime.py
+```
+
+This command checks the pinned OMP binary, arm64 image, task copy, candidate
+worker, sealed verifier, and expected baseline score.

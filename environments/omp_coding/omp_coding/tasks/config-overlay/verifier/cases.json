@@ -1,0 +1,707 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "host"
+                },
+                {
+                  "kind": "str",
+                  "value": "localhost"
+                }
+              ],
+              [
+                {
+                  "kind": "str",
+                  "value": "port"
+                },
+                {
+                  "kind": "int",
+                  "value": "80"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        }
+      },
+      "id": "adds-key",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "port"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "80"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            },
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "host"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "localhost"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "config_overlay:merge_config"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "port"
+                },
+                {
+                  "kind": "int",
+                  "value": "443"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        }
+      },
+      "id": "replaces-scalar",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "port"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "80"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            },
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "port"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "443"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "config_overlay:merge_config"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "server"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "host"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "a"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "port"
+                      },
+                      {
+                        "kind": "int",
+                        "value": "443"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        }
+      },
+      "id": "merges-nested",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "server"
+                  },
+                  {
+                    "items": [
+                      [
+                        {
+                          "kind": "str",
+                          "value": "host"
+                        },
+                        {
+                          "kind": "str",
+                          "value": "a"
+                        }
+                      ],
+                      [
+                        {
+                          "kind": "str",
+                          "value": "port"
+                        },
+                        {
+                          "kind": "int",
+                          "value": "80"
+                        }
+                      ]
+                    ],
+                    "kind": "dict"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            },
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "server"
+                  },
+                  {
+                    "items": [
+                      [
+                        {
+                          "kind": "str",
+                          "value": "port"
+                        },
+                        {
+                          "kind": "int",
+                          "value": "443"
+                        }
+                      ]
+                    ],
+                    "kind": "dict"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "config_overlay:merge_config"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "tags"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    }
+                  ],
+                  "kind": "list"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        }
+      },
+      "id": "replaces-lists",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "tags"
+                  },
+                  {
+                    "items": [
+                      {
+                        "kind": "str",
+                        "value": "a"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "b"
+                      }
+                    ],
+                    "kind": "list"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            },
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "tags"
+                  },
+                  {
+                    "items": [
+                      {
+                        "kind": "str",
+                        "value": "c"
+                      }
+                    ],
+                    "kind": "list"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "config_overlay:merge_config"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "token"
+                },
+                {
+                  "kind": "none"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        }
+      },
+      "id": "none-replaces",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "token"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "secret"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            },
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "token"
+                  },
+                  {
+                    "kind": "none"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "config_overlay:merge_config"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "server"
+                },
+                {
+                  "kind": "str",
+                  "value": "disabled"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        }
+      },
+      "id": "type-conflict",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "server"
+                  },
+                  {
+                    "items": [
+                      [
+                        {
+                          "kind": "str",
+                          "value": "port"
+                        },
+                        {
+                          "kind": "int",
+                          "value": "80"
+                        }
+                      ]
+                    ],
+                    "kind": "dict"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            },
+            {
+              "items": [
+                [
+                  {
+                    "kind": "str",
+                    "value": "server"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "disabled"
+                  }
+                ]
+              ],
+              "kind": "dict"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "config_overlay:merge_config"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "base": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "server"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "ports"
+                      },
+                      {
+                        "items": [
+                          {
+                            "kind": "int",
+                            "value": "80"
+                          }
+                        ],
+                        "kind": "list"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ]
+            ],
+            "kind": "dict"
+          },
+          "overlay": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "server"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "ports"
+                      },
+                      {
+                        "items": [
+                          {
+                            "kind": "int",
+                            "value": "443"
+                          }
+                        ],
+                        "kind": "list"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ]
+            ],
+            "kind": "dict"
+          },
+          "result": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "server"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "ports"
+                      },
+                      {
+                        "items": [
+                          {
+                            "kind": "int",
+                            "value": "443"
+                          }
+                        ],
+                        "kind": "list"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        }
+      },
+      "id": "does-not-mutate",
+      "observe": [
+        "result",
+        "base",
+        "overlay"
+      ],
+      "operations": [
+        {
+          "op": "value",
+          "store": "base",
+          "value": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "server"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "ports"
+                      },
+                      {
+                        "items": [
+                          {
+                            "kind": "int",
+                            "value": "80"
+                          }
+                        ],
+                        "kind": "list"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        },
+        {
+          "op": "value",
+          "store": "overlay",
+          "value": {
+            "items": [
+              [
+                {
+                  "kind": "str",
+                  "value": "server"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "ports"
+                      },
+                      {
+                        "items": [
+                          {
+                            "kind": "int",
+                            "value": "443"
+                          }
+                        ],
+                        "kind": "list"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ]
+            ],
+            "kind": "dict"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "base"
+            },
+            {
+              "kind": "ref",
+              "name": "overlay"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "config_overlay:merge_config"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "message": null,
+        "operation": 0,
+        "status": "error",
+        "type": "builtins:TypeError"
+      },
+      "id": "rejects-non-dict",
+      "observe": [],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [],
+              "kind": "dict"
+            },
+            {
+              "items": [],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "config_overlay:merge_config"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

@@ -1,38 +1,27 @@
 [project]
 name = "omp-gym"
-version = "0.3.2"
-description = "Training environment for coding models, built on the omp tool surface."
+version = "1.0.0"
+description = "Workspace for the OMP coding environment on Prime Verifiers v1."
 license = "MIT"
-requires-python = ">=3.11"
-dependencies = [
-    "mlx-lm>=0.31.3,<1.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "transformers>=5.5,<6",
-    "pyyaml>=6,<7",
-]
+requires-python = ">=3.11,<3.14"
+dependencies = []
 
-[project.scripts]
-omp-gym = "omp_gym.cli:main"
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["environments/omp_coding"]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.6",
     "coverage>=7,<8",
+    "ruff>=0.15,<0.16",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/omp_gym"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "B", "S", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests use assert on purpose; fuzzing uses seeded RNGs.
-"tests/**" = ["S101", "S311"]
-# Subprocess invocations are the runner/shim/isolation core.
-"src/omp_gym/shim.py" = ["S404", "S602", "S603", "S607"]
-"src/omp_gym/runner.py" = ["S404", "S602", "S603", "S607"]
-"src/omp_gym/isolation.py" = ["S404", "S602", "S603", "S607"]
+"environments/omp_coding/tests/**" = ["S101"]
+"environments/omp_coding/omp_coding/_vendor/**" = ["ALL"]
+"environments/omp_coding/omp_coding/tasks/**" = ["ALL"]

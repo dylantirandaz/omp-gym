@@ -1,9 +1,0 @@
-prompt = """
-Implement matchRoute in route_match.mjs. Keep the public function name
-and result shapes. Do not change test_route_match.mjs. Run
-`node test_route_match.mjs` and make sure that all tests pass.
-"""
-test_command = ["node", "test_route_match.mjs"]
-context_files = ["route_match.mjs", "test_route_match.mjs"]
-tools = "read,write,bash"
-max_time = "360"

@@ -1,9 +1,0 @@
-prompt = """Implement `merge_config` in `config_overlay.py`.
-
-The function must return a new configuration. Merge nested dictionaries recursively. Values from the overlay replace base values. Lists replace lists and do not concatenate. An explicit `None` value replaces the base value. Do not mutate either input. Reject a non-dictionary input with `TypeError`.
-
-Run `python3 test_config_overlay.py` to confirm that all tests pass.
-"""
-test_command = ["python3", "test_config_overlay.py"]
-expected_cases = 8
-tools = "read,write,bash"

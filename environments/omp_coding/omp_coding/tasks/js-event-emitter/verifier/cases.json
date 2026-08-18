@@ -1,0 +1,1607 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "fired": {
+            "kind": "bool",
+            "value": false
+          },
+          "once": {
+            "kind": "bool",
+            "value": false
+          },
+          "snapshot_length": {
+            "kind": "number",
+            "value": "1"
+          },
+          "unknown": {
+            "items": [],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "registry-helpers",
+      "observe": [
+        "once",
+        "fired",
+        "snapshot_length",
+        "unknown"
+      ],
+      "operations": [
+        {
+          "op": "value",
+          "store": "registry",
+          "value": {
+            "items": [],
+            "kind": "map"
+          }
+        },
+        {
+          "actions": [],
+          "op": "callback",
+          "store": "first"
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "registry"
+            },
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "first"
+            },
+            {
+              "kind": "bool",
+              "value": false
+            }
+          ],
+          "op": "call",
+          "store": "entry",
+          "target": "./listeners.mjs:addListener"
+        },
+        {
+          "op": "get",
+          "property": "once",
+          "store": "once",
+          "target": {
+            "kind": "ref",
+            "name": "entry"
+          }
+        },
+        {
+          "op": "get",
+          "property": "fired",
+          "store": "fired",
+          "target": {
+            "kind": "ref",
+            "name": "entry"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "registry"
+            },
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "op": "call",
+          "store": "snapshot",
+          "target": "./listeners.mjs:snapshotListeners"
+        },
+        {
+          "actions": [],
+          "op": "callback",
+          "store": "later"
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "registry"
+            },
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "later"
+            },
+            {
+              "kind": "bool",
+              "value": true
+            }
+          ],
+          "op": "call",
+          "store": "later_entry",
+          "target": "./listeners.mjs:addListener"
+        },
+        {
+          "op": "get",
+          "property": "length",
+          "store": "snapshot_length",
+          "target": {
+            "kind": "ref",
+            "name": "snapshot"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "registry"
+            },
+            {
+              "kind": "str",
+              "value": "nope"
+            }
+          ],
+          "op": "call",
+          "store": "unknown",
+          "target": "./listeners.mjs:snapshotListeners"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "calls": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  },
+                  {
+                    "kind": "number",
+                    "value": "1"
+                  }
+                ],
+                "kind": "list"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  },
+                  {
+                    "kind": "number",
+                    "value": "1"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          },
+          "other": {
+            "kind": "number",
+            "value": "0"
+          },
+          "ran": {
+            "kind": "number",
+            "value": "2"
+          }
+        }
+      },
+      "id": "basic-order",
+      "observe": [
+        "ran",
+        "calls",
+        "other"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "calls",
+          "value": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  },
+                  {
+                    "index": 0,
+                    "kind": "callback_arg"
+                  }
+                ],
+                "kind": "list"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "a"
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  },
+                  {
+                    "index": 0,
+                    "kind": "callback_arg"
+                  }
+                ],
+                "kind": "list"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "b"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "tick"
+            },
+            {
+              "kind": "ref",
+              "name": "a"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "unsub_a",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "tick"
+            },
+            {
+              "kind": "ref",
+              "name": "b"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "unsub_b",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "tick"
+            },
+            {
+              "kind": "number",
+              "value": "1"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "ran",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "other"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "other",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "calls": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "x"
+              },
+              {
+                "kind": "str",
+                "value": "x"
+              }
+            ],
+            "kind": "list"
+          },
+          "first_emit": {
+            "kind": "number",
+            "value": "1"
+          },
+          "second_emit": {
+            "kind": "number",
+            "value": "1"
+          }
+        }
+      },
+      "id": "unsubscribe-own-entry",
+      "observe": [
+        "first_emit",
+        "second_emit",
+        "calls"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "calls",
+          "value": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "x"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "handler"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "handler"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "first_unsub",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "handler"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "second_unsub",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [],
+          "op": "invoke",
+          "store": "removed",
+          "target": {
+            "kind": "ref",
+            "name": "second_unsub"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "first_emit",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [],
+          "op": "invoke",
+          "store": "removed_again",
+          "target": {
+            "kind": "ref",
+            "name": "second_unsub"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "second_emit",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "calls": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "first"
+              },
+              {
+                "kind": "str",
+                "value": "second"
+              },
+              {
+                "kind": "str",
+                "value": "shared"
+              }
+            ],
+            "kind": "list"
+          },
+          "ran": {
+            "kind": "number",
+            "value": "3"
+          }
+        }
+      },
+      "id": "off-first-match",
+      "observe": [
+        "ran",
+        "calls"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "calls",
+          "value": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "first"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "first"
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "second"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "second"
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "shared"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "shared"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "first"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u0",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "second"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u1",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "shared"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u2",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "shared"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u3",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "shared"
+            }
+          ],
+          "name": "off",
+          "op": "method",
+          "store": "off",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "ran",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "count": {
+            "kind": "number",
+            "value": "1"
+          },
+          "first": {
+            "kind": "number",
+            "value": "1"
+          },
+          "second": {
+            "kind": "number",
+            "value": "0"
+          }
+        }
+      },
+      "id": "once",
+      "observe": [
+        "first",
+        "second",
+        "count"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "count",
+          "value": {
+            "kind": "number",
+            "value": "0"
+          }
+        },
+        {
+          "actions": [
+            {
+              "op": "increment",
+              "value": "count"
+            }
+          ],
+          "op": "callback",
+          "store": "handler"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "handler"
+            }
+          ],
+          "name": "once",
+          "op": "method",
+          "store": "unsub",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "first",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "second",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "calls": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "outer"
+              },
+              {
+                "kind": "str",
+                "value": "outer"
+              },
+              {
+                "kind": "str",
+                "value": "inner"
+              }
+            ],
+            "kind": "list"
+          },
+          "first": {
+            "kind": "number",
+            "value": "1"
+          },
+          "second": {
+            "kind": "number",
+            "value": "2"
+          }
+        }
+      },
+      "id": "add-during-emit",
+      "observe": [
+        "first",
+        "second",
+        "calls"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "calls",
+          "value": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "inner"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "inner"
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "outer"
+              }
+            },
+            {
+              "args": [
+                {
+                  "kind": "str",
+                  "value": "e"
+                },
+                {
+                  "kind": "ref",
+                  "name": "inner"
+                }
+              ],
+              "name": "on",
+              "op": "method",
+              "store": "new_unsub",
+              "target": {
+                "kind": "ref",
+                "name": "emitter"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "outer"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "outer"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "unsub",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "first",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "second",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "calls": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "first"
+              },
+              {
+                "kind": "str",
+                "value": "second"
+              },
+              {
+                "kind": "str",
+                "value": "first"
+              }
+            ],
+            "kind": "list"
+          },
+          "first_emit": {
+            "kind": "number",
+            "value": "2"
+          },
+          "second_emit": {
+            "kind": "number",
+            "value": "1"
+          }
+        }
+      },
+      "id": "remove-during-emit",
+      "observe": [
+        "first_emit",
+        "second_emit",
+        "calls"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "calls",
+          "value": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "second"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "second"
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "first"
+              }
+            },
+            {
+              "args": [
+                {
+                  "kind": "str",
+                  "value": "e"
+                },
+                {
+                  "kind": "ref",
+                  "name": "second"
+                }
+              ],
+              "name": "off",
+              "op": "method",
+              "store": "off_result",
+              "target": {
+                "kind": "ref",
+                "name": "emitter"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "first"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "first"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u0",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "second"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u1",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "first_emit",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "second_emit",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "count": {
+            "kind": "number",
+            "value": "1"
+          },
+          "outer": {
+            "kind": "number",
+            "value": "1"
+          }
+        }
+      },
+      "id": "reentrant-once",
+      "observe": [
+        "outer",
+        "count"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "count",
+          "value": {
+            "kind": "number",
+            "value": "0"
+          }
+        },
+        {
+          "actions": [
+            {
+              "op": "increment",
+              "value": "count"
+            },
+            {
+              "args": [
+                {
+                  "kind": "str",
+                  "value": "e"
+                }
+              ],
+              "name": "emit",
+              "op": "method",
+              "store": "nested",
+              "target": {
+                "kind": "ref",
+                "name": "emitter"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "handler"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "handler"
+            }
+          ],
+          "name": "once",
+          "op": "method",
+          "store": "unsub",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "outer",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "calls": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "driver"
+              },
+              {
+                "kind": "str",
+                "value": "driver"
+              },
+              {
+                "kind": "str",
+                "value": "late-once"
+              }
+            ],
+            "kind": "list"
+          },
+          "ran": {
+            "kind": "number",
+            "value": "1"
+          }
+        }
+      },
+      "id": "nested-consumes-once",
+      "observe": [
+        "ran",
+        "calls"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "calls",
+          "value": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "late-once"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "late"
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "driver"
+              }
+            },
+            {
+              "equals": 1,
+              "list": "calls",
+              "op": "if_list_length",
+              "then": [
+                {
+                  "args": [
+                    {
+                      "kind": "str",
+                      "value": "e"
+                    }
+                  ],
+                  "name": "emit",
+                  "op": "method",
+                  "store": "nested",
+                  "target": {
+                    "kind": "ref",
+                    "name": "emitter"
+                  }
+                }
+              ]
+            }
+          ],
+          "op": "callback",
+          "store": "driver"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "driver"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u0",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "late"
+            }
+          ],
+          "name": "once",
+          "op": "method",
+          "store": "u1",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "ran",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "calls": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              }
+            ],
+            "kind": "list"
+          },
+          "ran": {
+            "kind": "number",
+            "value": "1"
+          }
+        }
+      },
+      "id": "independent-events",
+      "observe": [
+        "ran",
+        "calls"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "calls",
+          "value": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "a"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "a"
+        },
+        {
+          "actions": [
+            {
+              "list": "calls",
+              "op": "record",
+              "value": {
+                "kind": "str",
+                "value": "b"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "b"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a"
+            },
+            {
+              "kind": "ref",
+              "name": "a"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u0",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "b"
+            },
+            {
+              "kind": "ref",
+              "name": "b"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "u1",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "ran",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "ran": {
+            "kind": "number",
+            "value": "1"
+          },
+          "seen": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "number",
+                    "value": "1"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "two"
+                  },
+                  {
+                    "items": [
+                      {
+                        "kind": "number",
+                        "value": "3"
+                      }
+                    ],
+                    "kind": "list"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "argument-forwarding",
+      "observe": [
+        "ran",
+        "seen"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "construct",
+          "store": "emitter",
+          "target": "./emitter.mjs:Emitter"
+        },
+        {
+          "op": "value",
+          "store": "seen",
+          "value": {
+            "items": [],
+            "kind": "list"
+          }
+        },
+        {
+          "actions": [
+            {
+              "list": "seen",
+              "op": "record",
+              "value": {
+                "kind": "callback_args"
+              }
+            }
+          ],
+          "op": "callback",
+          "store": "handler"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "ref",
+              "name": "handler"
+            }
+          ],
+          "name": "on",
+          "op": "method",
+          "store": "unsub",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "e"
+            },
+            {
+              "kind": "number",
+              "value": "1"
+            },
+            {
+              "kind": "str",
+              "value": "two"
+            },
+            {
+              "items": [
+                {
+                  "kind": "number",
+                  "value": "3"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "name": "emit",
+          "op": "method",
+          "store": "ran",
+          "target": {
+            "kind": "ref",
+            "name": "emitter"
+          }
+        }
+      ]
+    }
+  ],
+  "runtime": "node",
+  "schema_version": 1
+}

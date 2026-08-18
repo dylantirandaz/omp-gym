@@ -1,0 +1,1647 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "none"
+          }
+        }
+      },
+      "id": "coerce-empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "none"
+          }
+        }
+      },
+      "id": "coerce-space",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "   "
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "42"
+          }
+        }
+      },
+      "id": "coerce-int",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": " 42 "
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "-3"
+          }
+        }
+      },
+      "id": "coerce-negative-int",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "-3"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "0"
+          }
+        }
+      },
+      "id": "coerce-zero",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "007"
+          }
+        }
+      },
+      "id": "coerce-leading-zero",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "007"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "-01"
+          }
+        }
+      },
+      "id": "coerce-negative-leading-zero",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "-01"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "float",
+            "value": "3.5"
+          }
+        }
+      },
+      "id": "coerce-float",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "3.5"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "float",
+            "value": "1.0"
+          }
+        }
+      },
+      "id": "coerce-whole-float",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "1.0"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": ".5"
+          }
+        }
+      },
+      "id": "coerce-dot-prefix",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ".5"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "5."
+          }
+        }
+      },
+      "id": "coerce-dot-suffix",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "5."
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "00.5"
+          }
+        }
+      },
+      "id": "coerce-float-leading-zero",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "00.5"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "+5"
+          }
+        }
+      },
+      "id": "coerce-plus",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "+5"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "1e3"
+          }
+        }
+      },
+      "id": "coerce-exponent",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "1e3"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "ada"
+          }
+        }
+      },
+      "id": "coerce-word",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "  ada  "
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "coerce:coerce_cell"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  [
+                    {
+                      "kind": "str",
+                      "value": "id"
+                    },
+                    {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  ],
+                  [
+                    {
+                      "kind": "str",
+                      "value": "name"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "ada"
+                    }
+                  ],
+                  [
+                    {
+                      "kind": "str",
+                      "value": "score"
+                    },
+                    {
+                      "kind": "float",
+                      "value": "9.5"
+                    }
+                  ]
+                ],
+                "kind": "dict"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-simple",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "name"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "ada"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "score"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "9.5"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  [
+                    {
+                      "kind": "str",
+                      "value": "id"
+                    },
+                    {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  ],
+                  [
+                    {
+                      "kind": "str",
+                      "value": "v"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ]
+                ],
+                "kind": "dict"
+              },
+              {
+                "items": [
+                  [
+                    {
+                      "kind": "str",
+                      "value": "id"
+                    },
+                    {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  ],
+                  [
+                    {
+                      "kind": "str",
+                      "value": "v"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    }
+                  ]
+                ],
+                "kind": "dict"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-left-order",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "2"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "a"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "2"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "b"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  [
+                    {
+                      "kind": "str",
+                      "value": "id"
+                    },
+                    {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  ],
+                  [
+                    {
+                      "kind": "str",
+                      "value": "v"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    }
+                  ]
+                ],
+                "kind": "dict"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-unmatched",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "9"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "a"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  [
+                    {
+                      "kind": "str",
+                      "value": "id"
+                    },
+                    {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  ],
+                  [
+                    {
+                      "kind": "str",
+                      "value": "v"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "new"
+                    }
+                  ]
+                ],
+                "kind": "dict"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-right-duplicate",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "old"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "new"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  [
+                    {
+                      "kind": "str",
+                      "value": "id"
+                    },
+                    {
+                      "kind": "int",
+                      "value": "7"
+                    }
+                  ],
+                  [
+                    {
+                      "kind": "str",
+                      "value": "v"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "x"
+                    }
+                  ]
+                ],
+                "kind": "dict"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-coerced-key",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": " 7 "
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "7"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "x"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-int-float-key",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "7"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "7.0"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "x"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-none-key",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": ""
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "l"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": ""
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "r"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "  "
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "r2"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  [
+                    {
+                      "kind": "str",
+                      "value": "id"
+                    },
+                    {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  ],
+                  [
+                    {
+                      "kind": "str",
+                      "value": "v"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "right"
+                    }
+                  ]
+                ],
+                "kind": "dict"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-right-precedence",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "left"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ],
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "right"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "left row 1 has no column id"
+              }
+            },
+            "kind": "object",
+            "type": "join:JoinError"
+          }
+        }
+      },
+      "id": "join-missing-left",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                },
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "name"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "no-key"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "right row 0 has no column id"
+              }
+            },
+            "kind": "object",
+            "type": "join:JoinError"
+          }
+        }
+      },
+      "id": "join-missing-right",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "id"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "v"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "a"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "left row 0 has no column id"
+              }
+            },
+            "kind": "object",
+            "type": "join:JoinError"
+          }
+        }
+      },
+      "id": "join-left-error-first",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "x"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "1"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    [
+                      {
+                        "kind": "str",
+                        "value": "y"
+                      },
+                      {
+                        "kind": "str",
+                        "value": "2"
+                      }
+                    ]
+                  ],
+                  "kind": "dict"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "join-empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [],
+              "kind": "list"
+            },
+            {
+              "items": [],
+              "kind": "list"
+            },
+            {
+              "kind": "str",
+              "value": "id"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "join:join_rows"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

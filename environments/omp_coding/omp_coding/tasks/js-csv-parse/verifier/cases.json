@@ -1,0 +1,832 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": ""
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "empty-record",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\n"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "c"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "simple",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a,b,c"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "trailing-lf",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a\n"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "trailing-crlf",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a\r\n"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  }
+                ],
+                "kind": "list"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "c"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "d"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "two-records",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a,b\nc,d"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  }
+                ],
+                "kind": "list"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  }
+                ],
+                "kind": "list"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "c"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "mixed-newlines",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a\r\nb\nc"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  },
+                  {
+                    "kind": "str",
+                    "value": ""
+                  },
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "empty-middle",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a,,b"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": ""
+                  },
+                  {
+                    "kind": "str",
+                    "value": ""
+                  }
+                ],
+                "kind": "list"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": ""
+                  },
+                  {
+                    "kind": "str",
+                    "value": ""
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "all-empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ",\n,"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a,b"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "c"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "quoted-comma",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"a,b\",c"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "line1\nline2"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "x"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "quoted-lf",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"line1\nline2\",x"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "crlf\r\nkept"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "quoted-crlf",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"crlf\r\nkept\""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "say \"hi\""
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "escaped",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"say \"\"hi\"\"\""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": ""
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "empty-quoted",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"\""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": ""
+                  },
+                  {
+                    "kind": "str",
+                    "value": "x"
+                  }
+                ],
+                "kind": "list"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "y"
+                  },
+                  {
+                    "kind": "str",
+                    "value": ""
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "quoted-edges",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"\",x\n\"y\",\"\""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "ab\"c"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "mid-quote",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "ab\"c"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a\rb"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "lone-cr",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a\rb"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  }
+                ],
+                "kind": "list"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "c"
+                  }
+                ],
+                "kind": "list"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "closing-separators",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"a\"\n\"b\",c\n"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "message": "unterminated quoted field",
+        "operation": 0,
+        "status": "error",
+        "type": "Error"
+      },
+      "id": "unterminated",
+      "observe": [],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"open"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "message": "unexpected character after closing quote",
+        "operation": 0,
+        "status": "error",
+        "type": "Error"
+      },
+      "id": "junk-after-quote",
+      "observe": [],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "\"a\"x"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./csv.mjs:parseCsv"
+        }
+      ]
+    }
+  ],
+  "runtime": "node",
+  "schema_version": 1
+}

@@ -16,9 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - run: uv sync
-      - run: uv run ruff check src/omp_gym tests holdout-tasks
-      - run: uv run python -m unittest discover -s tests
+      - run: uv sync --package omp-coding
+      - run: uv run ruff check environments/omp_coding/omp_coding environments/omp_coding/tests
+      - run: uv run --package omp-coding python -m unittest discover -s environments/omp_coding/tests -p 'test_v1.py'
+      - if: runner.os == 'macOS'
+        run: uv run --package omp-coding --extra metal omp-coding-train preflight
+
+  runtime-integration:
+    needs: checks
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: docker pull node@sha256:934240a162082fd8b8a2f90cd5114446443f1eba1c5378f6687167ca405e6584
+      - run: uv sync --package omp-coding
+      - run: uv run --package omp-coding python environments/omp_coding/tests/integration_runtime.py
 
   environment-package:
     needs: checks
@@ -26,8 +38,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - run: uv build --wheel environments/omp-coding --out-dir dist/environment
-      - name: Verify public environment wheel
+      - run: uv build --wheel environments/omp_coding --out-dir dist/environment
+      - name: Verify environment wheel
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -37,24 +49,41 @@ jobs:
           assert len(wheels) == 1, wheels
           with ZipFile(wheels[0]) as archive:
               names = set(archive.namelist())
-              tasks = {
-                  name.split("/")[-2]
-                  for name in names
-                  if name.startswith("omp_coding/tasks/")
-                  and name.endswith("/task.toml")
-              }
               metadata_name = next(
                   name
                   for name in names
                   if name.endswith(".dist-info/METADATA")
               )
               metadata = archive.read(metadata_name).decode()
-          assert len(tasks) == 18, sorted(tasks)
-          assert "omp_coding/__init__.py" in names
-          assert "README.md" in names
-          assert "pyproject.toml" in names
+          task_configs = {
+              name
+              for name in names
+              if name.startswith("omp_coding/tasks/")
+              and name.endswith("/task.toml")
+          }
+          case_files = {
+              name
+              for name in names
+              if name.startswith("omp_coding/tasks/")
+              and name.endswith("/verifier/cases.json")
+          }
+          rpc_files = {
+              "omp_coding/_vendor/omp_rpc/__init__.py",
+              "omp_coding/_vendor/omp_rpc/client.py",
+              "omp_coding/_vendor/omp_rpc/host_tools.py",
+              "omp_coding/_vendor/omp_rpc/host_uris.py",
+              "omp_coding/_vendor/omp_rpc/protocol.py",
+          }
+          assert len(task_configs) == 18, sorted(task_configs)
+          assert len(case_files) == 18, sorted(case_files)
+          assert rpc_files <= names
+          assert "omp_coding/training.py" in names
+          assert "omp_coding/_runtime_harness.py" in names
+          assert "omp_coding/_python_candidate.py" in names
+          assert "omp_coding/_node_candidate.mjs" in names
+          assert "omp_coding/_container_tool.py" in names
           assert "Requires-Python: <3.14,>=3.11" in metadata
-          assert "@main" not in metadata
+          assert "Version: 1.0.0" in metadata
           assert "@0a4d872f021022310a08ec213a25f4efb4a0244a" in metadata
-          assert "@ec0cd4cd0ab9a40eb2b5a4f01def014b6f1fc111" in metadata
+          assert "Requires-Dist: omp-gym" not in metadata
           PY

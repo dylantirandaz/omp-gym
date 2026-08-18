@@ -1,0 +1,334 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {},
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-1",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {},
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-2",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "?"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "a": {
+                "kind": "str",
+                "value": "1"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-3",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a=1"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "a": {
+                "kind": "str",
+                "value": "1"
+              },
+              "b": {
+                "kind": "str",
+                "value": "2"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-4",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "?a=1&b=2"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "flag": {
+                "kind": "str",
+                "value": ""
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-5",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "flag"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "a": {
+                "kind": "str",
+                "value": "2"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-6",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a=1&a=2"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "a b": {
+                "kind": "str",
+                "value": "c&d"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-7",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a%20b=c%26d"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "a": {
+                "kind": "str",
+                "value": "1"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-8",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "&&a=1&&"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "a": {
+                "kind": "str",
+                "value": "b=c"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-9",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a=b=c"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "x": {
+                "kind": "str",
+                "value": ""
+              },
+              "y": {
+                "kind": "str",
+                "value": ""
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "query-10",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "?x=&y"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "./query_string.mjs:parseQuery"
+        }
+      ]
+    }
+  ],
+  "runtime": "node",
+  "schema_version": 1
+}

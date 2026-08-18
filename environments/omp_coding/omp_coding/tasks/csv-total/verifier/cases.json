@@ -1,0 +1,78 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "55.0"
+            }
+          }
+        }
+      },
+      "id": "units",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "data.csv"
+            },
+            {
+              "kind": "str",
+              "value": "units"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "report:total_column"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "44.75"
+            }
+          }
+        }
+      },
+      "id": "price",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "data.csv"
+            },
+            {
+              "kind": "str",
+              "value": "price"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "report:total_column"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

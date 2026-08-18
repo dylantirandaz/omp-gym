@@ -1,18 +1,10 @@
-# The remote trainer needs selected datasets and resume checkpoints.
-!dataset/
-!dataset/***
-!dataset-verified/
-!dataset-verified/***
-!dataset-action/
-!dataset-action/***
+# Remote Metal jobs need only the current v1 dataset and adapter.
+!dataset-v1/
+!dataset-v1/***
 !adapters/
-!adapters/v5/
-!adapters/v5/***
-!adapters/v7-stage2-0800/
-!adapters/v7-stage2-0800/***
-!dataset-varied-runtime/
-!dataset-varied-runtime/***
-!adapters/v15-varied-runtime/
-!adapters/v15-varied-runtime/***
 adapters/*
+!adapters/omp-coding-v1/
+!adapters/omp-coding-v1/***
+outputs/
+runs/
 holdout-results/

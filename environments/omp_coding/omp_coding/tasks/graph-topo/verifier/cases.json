@@ -1,0 +1,1276 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [],
+              "kind": "list"
+            },
+            {
+              "items": [],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "single",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "a"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              },
+              {
+                "kind": "str",
+                "value": "b"
+              },
+              {
+                "kind": "str",
+                "value": "c"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "chain",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "c"
+                },
+                {
+                  "kind": "str",
+                  "value": "a"
+                },
+                {
+                  "kind": "str",
+                  "value": "b"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              },
+              {
+                "kind": "str",
+                "value": "b"
+              },
+              {
+                "kind": "str",
+                "value": "c"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "ties",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "c"
+                },
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "a"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              },
+              {
+                "kind": "str",
+                "value": "b"
+              },
+              {
+                "kind": "str",
+                "value": "c"
+              },
+              {
+                "kind": "str",
+                "value": "d"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "diamond",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "d"
+                },
+                {
+                  "kind": "str",
+                  "value": "c"
+                },
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "a"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "d"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "d"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "b"
+              },
+              {
+                "kind": "str",
+                "value": "a"
+              },
+              {
+                "kind": "str",
+                "value": "c"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "ready-updates",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "a"
+                },
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "c"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              },
+              {
+                "kind": "str",
+                "value": "b"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "duplicate-edges",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "a"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              },
+              {
+                "kind": "str",
+                "value": "c"
+              },
+              {
+                "kind": "str",
+                "value": "d"
+              },
+              {
+                "kind": "str",
+                "value": "b"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "isolated",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "d"
+                },
+                {
+                  "kind": "str",
+                  "value": "c"
+                },
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "a"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "d"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "cycle": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "x"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            },
+            "kind": "object",
+            "type": "graph:CycleError"
+          }
+        }
+      },
+      "id": "self-loop",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "x"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "x"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "x"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "cycle": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            },
+            "kind": "object",
+            "type": "graph:CycleError"
+          }
+        }
+      },
+      "id": "two-cycle",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "a"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "cycle": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "c"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "d"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            },
+            "kind": "object",
+            "type": "graph:CycleError"
+          }
+        }
+      },
+      "id": "cycle-anchor",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "c"
+                },
+                {
+                  "kind": "str",
+                  "value": "d"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "d"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "d"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "cycle": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "c"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            },
+            "kind": "object",
+            "type": "graph:CycleError"
+          }
+        }
+      },
+      "id": "before-cycle",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "a"
+                },
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "c"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "c"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "cycle": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "e"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "f"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            },
+            "kind": "object",
+            "type": "graph:CycleError"
+          }
+        }
+      },
+      "id": "smallest-cycle",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "m"
+                },
+                {
+                  "kind": "str",
+                  "value": "n"
+                },
+                {
+                  "kind": "str",
+                  "value": "e"
+                },
+                {
+                  "kind": "str",
+                  "value": "f"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "m"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "n"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "n"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "m"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "e"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "f"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "f"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "e"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "cycle": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            },
+            "kind": "object",
+            "type": "graph:CycleError"
+          }
+        }
+      },
+      "id": "smallest-successor",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "a"
+                },
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "z"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "z"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "z"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "cycle": {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "a"
+                  },
+                  {
+                    "kind": "str",
+                    "value": "b"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            },
+            "kind": "object",
+            "type": "graph:CycleError"
+          }
+        }
+      },
+      "id": "dead-end",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "a"
+                },
+                {
+                  "kind": "str",
+                  "value": "b"
+                },
+                {
+                  "kind": "str",
+                  "value": "q"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "items": [
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "a"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "b"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "q"
+                    }
+                  ],
+                  "kind": "tuple"
+                },
+                {
+                  "items": [
+                    {
+                      "kind": "str",
+                      "value": "q"
+                    },
+                    {
+                      "kind": "str",
+                      "value": "q"
+                    }
+                  ],
+                  "kind": "tuple"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "graph:topo_sort"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

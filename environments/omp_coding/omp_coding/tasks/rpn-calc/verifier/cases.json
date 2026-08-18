@@ -1,0 +1,482 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "42"
+          }
+        }
+      },
+      "id": "rpn-1",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "42"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "7"
+          }
+        }
+      },
+      "id": "rpn-2",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "3"
+                },
+                {
+                  "kind": "str",
+                  "value": "4"
+                },
+                {
+                  "kind": "str",
+                  "value": "+"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "14"
+          }
+        }
+      },
+      "id": "rpn-3",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "5"
+                },
+                {
+                  "kind": "str",
+                  "value": "1"
+                },
+                {
+                  "kind": "str",
+                  "value": "2"
+                },
+                {
+                  "kind": "str",
+                  "value": "+"
+                },
+                {
+                  "kind": "str",
+                  "value": "4"
+                },
+                {
+                  "kind": "str",
+                  "value": "*"
+                },
+                {
+                  "kind": "str",
+                  "value": "+"
+                },
+                {
+                  "kind": "str",
+                  "value": "3"
+                },
+                {
+                  "kind": "str",
+                  "value": "-"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "42"
+          }
+        }
+      },
+      "id": "rpn-4",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "6"
+                },
+                {
+                  "kind": "str",
+                  "value": "7"
+                },
+                {
+                  "kind": "str",
+                  "value": "*"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "-3"
+          }
+        }
+      },
+      "id": "rpn-5",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "7"
+                },
+                {
+                  "kind": "str",
+                  "value": "-2"
+                },
+                {
+                  "kind": "str",
+                  "value": "/"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "int",
+            "value": "-3"
+          }
+        }
+      },
+      "id": "rpn-6",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "-7"
+                },
+                {
+                  "kind": "str",
+                  "value": "2"
+                },
+                {
+                  "kind": "str",
+                  "value": "/"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "unknown token"
+              }
+            },
+            "kind": "object",
+            "type": "rpn:RpnError"
+          }
+        }
+      },
+      "id": "rpn-7",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "3"
+                },
+                {
+                  "kind": "str",
+                  "value": "x"
+                },
+                {
+                  "kind": "str",
+                  "value": "+"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "stack underflow"
+              }
+            },
+            "kind": "object",
+            "type": "rpn:RpnError"
+          }
+        }
+      },
+      "id": "rpn-8",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "3"
+                },
+                {
+                  "kind": "str",
+                  "value": "+"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "leftover operands"
+              }
+            },
+            "kind": "object",
+            "type": "rpn:RpnError"
+          }
+        }
+      },
+      "id": "rpn-9",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "1"
+                },
+                {
+                  "kind": "str",
+                  "value": "2"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "division by zero"
+              }
+            },
+            "kind": "object",
+            "type": "rpn:RpnError"
+          }
+        }
+      },
+      "id": "rpn-10",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "kind": "str",
+                  "value": "1"
+                },
+                {
+                  "kind": "str",
+                  "value": "0"
+                },
+                {
+                  "kind": "str",
+                  "value": "/"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "empty expression"
+              }
+            },
+            "kind": "object",
+            "type": "rpn:RpnError"
+          }
+        }
+      },
+      "id": "rpn-11",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rpn:evaluate_rpn"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

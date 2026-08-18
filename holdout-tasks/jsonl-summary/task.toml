@@ -1,9 +1,0 @@
-prompt = """
-Implement summarize_lines in summary.py. Keep the public result types
-and function name. Do not change test_summary.py. Run
-`python3 test_summary.py` and make sure that all tests pass.
-"""
-test_command = ["python3", "test_summary.py"]
-context_files = ["summary.py", "test_summary.py"]
-tools = "read,write,bash"
-max_time = "360"

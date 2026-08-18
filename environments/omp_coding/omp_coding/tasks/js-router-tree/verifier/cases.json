@@ -1,0 +1,1108 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "path0": {
+            "items": [],
+            "kind": "list"
+          },
+          "path1": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              },
+              {
+                "kind": "str",
+                "value": "b"
+              }
+            ],
+            "kind": "list"
+          },
+          "path2": {
+            "items": [
+              {
+                "kind": "str",
+                "value": "a"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "split-path",
+      "observe": [
+        "path0",
+        "path1",
+        "path2"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/"
+            }
+          ],
+          "op": "call",
+          "store": "path0",
+          "target": "./router.mjs:splitPath"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/b"
+            }
+          ],
+          "op": "call",
+          "store": "path1",
+          "target": "./router.mjs:splitPath"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/"
+            }
+          ],
+          "op": "call",
+          "store": "path2",
+          "target": "./router.mjs:splitPath"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "about": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "about"
+              },
+              "params": {
+                "fields": {},
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          },
+          "deep": {
+            "kind": "none"
+          },
+          "missing": {
+            "kind": "none"
+          },
+          "root": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "home"
+              },
+              "params": {
+                "fields": {},
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "static-routes",
+      "observe": [
+        "root",
+        "about",
+        "missing",
+        "deep"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/"
+            },
+            {
+              "kind": "str",
+              "value": "home"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/about"
+            },
+            {
+              "kind": "str",
+              "value": "about"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg1",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "root",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/about"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "about",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/missing"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "missing",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/about/deep"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "deep",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "again": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "user"
+              },
+              "params": {
+                "fields": {
+                  "id": {
+                    "kind": "str",
+                    "value": "8"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          },
+          "missing": {
+            "kind": "none"
+          },
+          "one": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "user"
+              },
+              "params": {
+                "fields": {
+                  "id": {
+                    "kind": "str",
+                    "value": "7"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          },
+          "two": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "post"
+              },
+              "params": {
+                "fields": {
+                  "id": {
+                    "kind": "str",
+                    "value": "7"
+                  },
+                  "post": {
+                    "kind": "str",
+                    "value": "9"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "params",
+      "observe": [
+        "one",
+        "two",
+        "missing",
+        "again"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/users/:id"
+            },
+            {
+              "kind": "str",
+              "value": "user"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/users/:id/posts/:post"
+            },
+            {
+              "kind": "str",
+              "value": "post"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg1",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/users/7"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "one",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/users/7/posts/9"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "two",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/users"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "missing",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/users/8"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "again",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "missing": {
+            "kind": "none"
+          },
+          "param": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "param"
+              },
+              "params": {
+                "fields": {
+                  "name": {
+                    "kind": "str",
+                    "value": "other"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          },
+          "static": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "static"
+              },
+              "params": {
+                "fields": {},
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          },
+          "wild": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "wild"
+              },
+              "params": {
+                "fields": {
+                  "rest": {
+                    "kind": "str",
+                    "value": "a/b/c"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "precedence",
+      "observe": [
+        "static",
+        "param",
+        "wild",
+        "missing"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/files/readme"
+            },
+            {
+              "kind": "str",
+              "value": "static"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/files/:name"
+            },
+            {
+              "kind": "str",
+              "value": "param"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg1",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/files/*rest"
+            },
+            {
+              "kind": "str",
+              "value": "wild"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg2",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/files/readme"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "static",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/files/other"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "param",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/files/a/b/c"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "wild",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/files"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "missing",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "deep": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "param-deep"
+              },
+              "params": {
+                "fields": {
+                  "x": {
+                    "kind": "str",
+                    "value": "b"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          },
+          "short": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "short-static"
+              },
+              "params": {
+                "fields": {},
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "static-backtracking",
+      "observe": [
+        "short",
+        "deep"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/b"
+            },
+            {
+              "kind": "str",
+              "value": "short-static"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/:x/c"
+            },
+            {
+              "kind": "str",
+              "value": "param-deep"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg1",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/b"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "short",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/b/c"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "deep",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "wild"
+              },
+              "params": {
+                "fields": {
+                  "rest": {
+                    "kind": "str",
+                    "value": "b/c"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "wildcard-backtracking",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/:x"
+            },
+            {
+              "kind": "str",
+              "value": "param"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/*rest"
+            },
+            {
+              "kind": "str",
+              "value": "wild"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg1",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/a/b/c"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "result",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "message": "duplicate route",
+        "operation": 2,
+        "status": "error",
+        "type": "Error"
+      },
+      "id": "duplicate-static",
+      "observe": [],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/dup"
+            },
+            {
+              "kind": "str",
+              "value": "one"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/dup"
+            },
+            {
+              "kind": "str",
+              "value": "two"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "bad",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "message": "duplicate route",
+        "operation": 2,
+        "status": "error",
+        "type": "Error"
+      },
+      "id": "duplicate-wildcard",
+      "observe": [],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/w/*rest"
+            },
+            {
+              "kind": "str",
+              "value": "w1"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/w/*other"
+            },
+            {
+              "kind": "str",
+              "value": "w2"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "bad",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "message": "conflicting param names",
+        "operation": 2,
+        "status": "error",
+        "type": "Error"
+      },
+      "id": "conflicting-param",
+      "observe": [],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/p/:id"
+            },
+            {
+              "kind": "str",
+              "value": "p1"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/p/:name"
+            },
+            {
+              "kind": "str",
+              "value": "p2"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "bad",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "message": "wildcard must be the last segment",
+        "operation": 1,
+        "status": "error",
+        "type": "Error"
+      },
+      "id": "wildcard-position",
+      "observe": [],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/x/*rest/tail"
+            },
+            {
+              "kind": "str",
+              "value": "x"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "bad",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "handler": {
+                "kind": "str",
+                "value": "edit"
+              },
+              "params": {
+                "fields": {
+                  "id": {
+                    "kind": "str",
+                    "value": "5"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          }
+        }
+      },
+      "id": "shared-param",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [],
+          "op": "call",
+          "store": "router",
+          "target": "./router.mjs:createRouter"
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/p/:id"
+            },
+            {
+              "kind": "str",
+              "value": "leaf"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg0",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/p/:id/edit"
+            },
+            {
+              "kind": "str",
+              "value": "edit"
+            }
+          ],
+          "name": "register",
+          "op": "method",
+          "store": "reg1",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "/p/5/edit"
+            }
+          ],
+          "name": "resolve",
+          "op": "method",
+          "store": "result",
+          "target": {
+            "kind": "ref",
+            "name": "router"
+          }
+        }
+      ]
+    }
+  ],
+  "runtime": "node",
+  "schema_version": 1
+}

@@ -1,0 +1,1858 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.4932122668392295"
+            }
+          }
+        }
+      },
+      "id": "jitter-seven-first",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "jitter:jitter_fraction"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.9556595384052861"
+            }
+          }
+        }
+      },
+      "id": "jitter-seven-second",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "jitter:jitter_fraction"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.9065758219926131"
+            }
+          }
+        }
+      },
+      "id": "jitter-seven-third",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "2"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "jitter:jitter_fraction"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.07820865487829387"
+            }
+          }
+        }
+      },
+      "id": "jitter-zero",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "jitter:jitter_fraction"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.42320917087271326"
+            }
+          }
+        }
+      },
+      "id": "jitter-one",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "jitter:jitter_fraction"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "j0_0": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.07820865487829387"
+            }
+          },
+          "j0_1": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.10169876029679303"
+            }
+          },
+          "j0_2": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.6053233226252335"
+            }
+          },
+          "j0_3": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.40121620369530075"
+            }
+          },
+          "j0_4": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.3836257966196641"
+            }
+          },
+          "j0_5": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.5608596333339084"
+            }
+          },
+          "j0_6": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.07911035053228133"
+            }
+          },
+          "j0_7": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.35597941610878925"
+            }
+          },
+          "j1_0": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.42320917087271326"
+            }
+          },
+          "j1_1": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.5094074428837206"
+            }
+          },
+          "j1_2": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.6483593939634306"
+            }
+          },
+          "j1_3": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.3828633905082601"
+            }
+          },
+          "j1_4": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.795447749253532"
+            }
+          },
+          "j1_5": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.5005112827950045"
+            }
+          },
+          "j1_6": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.5539353613127292"
+            }
+          },
+          "j1_7": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.06541931197423745"
+            }
+          },
+          "j42_0": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.5682303266439076"
+            }
+          },
+          "j42_1": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.2254634289477513"
+            }
+          },
+          "j42_2": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.41283831882951183"
+            }
+          },
+          "j42_3": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.6303980498395979"
+            }
+          },
+          "j42_4": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.6801478072421157"
+            }
+          },
+          "j42_5": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.02622891069993838"
+            }
+          },
+          "j42_6": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.02176080331109298"
+            }
+          },
+          "j42_7": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.152455042457612"
+            }
+          },
+          "j7_0": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.4932122668392295"
+            }
+          },
+          "j7_1": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.9556595384052861"
+            }
+          },
+          "j7_2": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.9065758219926131"
+            }
+          },
+          "j7_3": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.2727465113860169"
+            }
+          },
+          "j7_4": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.2663794650567394"
+            }
+          },
+          "j7_5": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.13842117956158007"
+            }
+          },
+          "j7_6": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.40288542599541655"
+            }
+          },
+          "j7_7": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.3220586871669264"
+            }
+          },
+          "j9223372036854775808_0": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.5782086548782939"
+            }
+          },
+          "j9223372036854775808_1": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.601698760296793"
+            }
+          },
+          "j9223372036854775808_2": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.10532332262523347"
+            }
+          },
+          "j9223372036854775808_3": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.9012162036953008"
+            }
+          },
+          "j9223372036854775808_4": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.8836257966196641"
+            }
+          },
+          "j9223372036854775808_5": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.060859633333908425"
+            }
+          },
+          "j9223372036854775808_6": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.5791103505322813"
+            }
+          },
+          "j9223372036854775808_7": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.8559794161087892"
+            }
+          }
+        }
+      },
+      "id": "jitter-range",
+      "observe": [
+        "j0_0",
+        "j0_1",
+        "j0_2",
+        "j0_3",
+        "j0_4",
+        "j0_5",
+        "j0_6",
+        "j0_7",
+        "j1_0",
+        "j1_1",
+        "j1_2",
+        "j1_3",
+        "j1_4",
+        "j1_5",
+        "j1_6",
+        "j1_7",
+        "j7_0",
+        "j7_1",
+        "j7_2",
+        "j7_3",
+        "j7_4",
+        "j7_5",
+        "j7_6",
+        "j7_7",
+        "j42_0",
+        "j42_1",
+        "j42_2",
+        "j42_3",
+        "j42_4",
+        "j42_5",
+        "j42_6",
+        "j42_7",
+        "j9223372036854775808_0",
+        "j9223372036854775808_1",
+        "j9223372036854775808_2",
+        "j9223372036854775808_3",
+        "j9223372036854775808_4",
+        "j9223372036854775808_5",
+        "j9223372036854775808_6",
+        "j9223372036854775808_7"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "j0_0",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "j0_1",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "2"
+            }
+          ],
+          "op": "call",
+          "store": "j0_2",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            }
+          ],
+          "op": "call",
+          "store": "j0_3",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "4"
+            }
+          ],
+          "op": "call",
+          "store": "j0_4",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "5"
+            }
+          ],
+          "op": "call",
+          "store": "j0_5",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            }
+          ],
+          "op": "call",
+          "store": "j0_6",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "7"
+            }
+          ],
+          "op": "call",
+          "store": "j0_7",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "j1_0",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "j1_1",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "2"
+            }
+          ],
+          "op": "call",
+          "store": "j1_2",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            }
+          ],
+          "op": "call",
+          "store": "j1_3",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "4"
+            }
+          ],
+          "op": "call",
+          "store": "j1_4",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "5"
+            }
+          ],
+          "op": "call",
+          "store": "j1_5",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            }
+          ],
+          "op": "call",
+          "store": "j1_6",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "7"
+            }
+          ],
+          "op": "call",
+          "store": "j1_7",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "j7_0",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "j7_1",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "2"
+            }
+          ],
+          "op": "call",
+          "store": "j7_2",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            }
+          ],
+          "op": "call",
+          "store": "j7_3",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "4"
+            }
+          ],
+          "op": "call",
+          "store": "j7_4",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "5"
+            }
+          ],
+          "op": "call",
+          "store": "j7_5",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            }
+          ],
+          "op": "call",
+          "store": "j7_6",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "7"
+            },
+            {
+              "kind": "int",
+              "value": "7"
+            }
+          ],
+          "op": "call",
+          "store": "j7_7",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "j42_0",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "j42_1",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "2"
+            }
+          ],
+          "op": "call",
+          "store": "j42_2",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            }
+          ],
+          "op": "call",
+          "store": "j42_3",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "4"
+            }
+          ],
+          "op": "call",
+          "store": "j42_4",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "5"
+            }
+          ],
+          "op": "call",
+          "store": "j42_5",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            }
+          ],
+          "op": "call",
+          "store": "j42_6",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "7"
+            }
+          ],
+          "op": "call",
+          "store": "j42_7",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "9223372036854775808"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "j9223372036854775808_0",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "9223372036854775808"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "j9223372036854775808_1",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "9223372036854775808"
+            },
+            {
+              "kind": "int",
+              "value": "2"
+            }
+          ],
+          "op": "call",
+          "store": "j9223372036854775808_2",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "9223372036854775808"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            }
+          ],
+          "op": "call",
+          "store": "j9223372036854775808_3",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "9223372036854775808"
+            },
+            {
+              "kind": "int",
+              "value": "4"
+            }
+          ],
+          "op": "call",
+          "store": "j9223372036854775808_4",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "9223372036854775808"
+            },
+            {
+              "kind": "int",
+              "value": "5"
+            }
+          ],
+          "op": "call",
+          "store": "j9223372036854775808_5",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "9223372036854775808"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            }
+          ],
+          "op": "call",
+          "store": "j9223372036854775808_6",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "9223372036854775808"
+            },
+            {
+              "kind": "int",
+              "value": "7"
+            }
+          ],
+          "op": "call",
+          "store": "j9223372036854775808_7",
+          "target": "jitter:jitter_fraction"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "first": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.6303980498395979"
+            }
+          },
+          "second": {
+            "absolute": 1e-12,
+            "compare": "close",
+            "value": {
+              "kind": "float",
+              "value": "0.6303980498395979"
+            }
+          }
+        }
+      },
+      "id": "jitter-stable",
+      "observe": [
+        "first",
+        "second"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            }
+          ],
+          "op": "call",
+          "store": "first",
+          "target": "jitter:jitter_fraction"
+        },
+        {
+          "args": [
+            {
+              "kind": "int",
+              "value": "42"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            }
+          ],
+          "op": "call",
+          "store": "second",
+          "target": "jitter:jitter_fraction"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [
+                {
+                  "kind": "float",
+                  "value": "0.7841151633219539"
+                },
+                {
+                  "kind": "float",
+                  "value": "1.2254634289477513"
+                },
+                {
+                  "kind": "float",
+                  "value": "2.825676637659024"
+                },
+                {
+                  "kind": "float",
+                  "value": "6.521592199358391"
+                },
+                {
+                  "kind": "float",
+                  "value": "13.441182457936925"
+                },
+                {
+                  "kind": "float",
+                  "value": "16.419662571199012"
+                }
+              ],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-exact",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "1000.0"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            },
+            {
+              "kind": "int",
+              "value": "42"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "policy:plan_retries"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [
+                {
+                  "kind": "float",
+                  "value": "0.7841151633219539"
+                },
+                {
+                  "kind": "float",
+                  "value": "1.2254634289477513"
+                },
+                {
+                  "kind": "float",
+                  "value": "2.825676637659024"
+                },
+                {
+                  "kind": "float",
+                  "value": "6.521592199358391"
+                },
+                {
+                  "kind": "float",
+                  "value": "13.441182457936925"
+                },
+                {
+                  "kind": "float",
+                  "value": "16.419662571199012"
+                }
+              ],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-band",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "1000.0"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            },
+            {
+              "kind": "int",
+              "value": "42"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "policy:plan_retries"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [
+                {
+                  "kind": "float",
+                  "value": "0.7466061334196148"
+                },
+                {
+                  "kind": "float",
+                  "value": "2.933489307607929"
+                },
+                {
+                  "kind": "float",
+                  "value": "3.8131516439852264"
+                },
+                {
+                  "kind": "float",
+                  "value": "2.5454930227720336"
+                },
+                {
+                  "kind": "float",
+                  "value": "2.532758930113479"
+                }
+              ],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-max-delay",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "3.0"
+            },
+            {
+              "kind": "float",
+              "value": "4.0"
+            },
+            {
+              "kind": "float",
+              "value": "1000.0"
+            },
+            {
+              "kind": "int",
+              "value": "5"
+            },
+            {
+              "kind": "int",
+              "value": "7"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "policy:plan_retries"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [
+                {
+                  "kind": "float",
+                  "value": "0.7841151633219539"
+                },
+                {
+                  "kind": "float",
+                  "value": "1.2254634289477513"
+                },
+                {
+                  "kind": "float",
+                  "value": "2.825676637659024"
+                },
+                {
+                  "kind": "float",
+                  "value": "6.521592199358391"
+                }
+              ],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-crossing",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "24.0"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            },
+            {
+              "kind": "int",
+              "value": "42"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "policy:plan_retries"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [
+                {
+                  "kind": "float",
+                  "value": "0.7841151633219539"
+                },
+                {
+                  "kind": "float",
+                  "value": "1.2254634289477513"
+                },
+                {
+                  "kind": "float",
+                  "value": "2.825676637659024"
+                },
+                {
+                  "kind": "float",
+                  "value": "6.521592199358391"
+                },
+                {
+                  "kind": "float",
+                  "value": "13.441182457936925"
+                }
+              ],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-exact-elapsed",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "24.798029887224047"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            },
+            {
+              "kind": "int",
+              "value": "42"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "policy:plan_retries"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [
+                {
+                  "kind": "float",
+                  "value": "0.7841151633219539"
+                },
+                {
+                  "kind": "float",
+                  "value": "1.2254634289477513"
+                },
+                {
+                  "kind": "float",
+                  "value": "2.825676637659024"
+                }
+              ],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-max-attempts",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "1000.0"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            },
+            {
+              "kind": "int",
+              "value": "42"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "policy:plan_retries"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-zero-attempts",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "1000.0"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            },
+            {
+              "kind": "int",
+              "value": "42"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "policy:plan_retries"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-tiny-budget",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "0.1"
+            },
+            {
+              "kind": "int",
+              "value": "6"
+            },
+            {
+              "kind": "int",
+              "value": "42"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "policy:plan_retries"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "seed0": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [
+                {
+                  "kind": "float",
+                  "value": "0.5391043274391469"
+                }
+              ],
+              "kind": "list"
+            }
+          },
+          "seed1": {
+            "absolute": 1e-09,
+            "compare": "close_recursive",
+            "value": {
+              "items": [
+                {
+                  "kind": "float",
+                  "value": "0.7116045854363566"
+                }
+              ],
+              "kind": "list"
+            }
+          }
+        }
+      },
+      "id": "plan-seed-change",
+      "observe": [
+        "seed0",
+        "seed1"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "1000.0"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "0"
+            }
+          ],
+          "op": "call",
+          "store": "seed0",
+          "target": "policy:plan_retries"
+        },
+        {
+          "args": [
+            {
+              "kind": "float",
+              "value": "1.0"
+            },
+            {
+              "kind": "float",
+              "value": "2.0"
+            },
+            {
+              "kind": "float",
+              "value": "60.0"
+            },
+            {
+              "kind": "float",
+              "value": "1000.0"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "seed1",
+          "target": "policy:plan_retries"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

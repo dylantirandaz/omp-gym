@@ -1,0 +1,364 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [],
+            "kind": "tuple"
+          }
+        }
+      },
+      "id": "words-1",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "words:word_freq"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "hello"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "1"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            ],
+            "kind": "tuple"
+          }
+        }
+      },
+      "id": "words-2",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "hello"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "words:word_freq"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "dog"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "3"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            ],
+            "kind": "tuple"
+          }
+        }
+      },
+      "id": "words-3",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "Dog dog DOG"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "words:word_freq"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "stop"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "2"
+                  }
+                ],
+                "kind": "tuple"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "go"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "1"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            ],
+            "kind": "tuple"
+          }
+        }
+      },
+      "id": "words-4",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "stop, go; stop!"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "words:word_freq"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "apple"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "2"
+                  }
+                ],
+                "kind": "tuple"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "pear"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "2"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            ],
+            "kind": "tuple"
+          }
+        }
+      },
+      "id": "words-5",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "pear apple pear apple"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "words:word_freq"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "area51"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "2"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            ],
+            "kind": "tuple"
+          }
+        }
+      },
+      "id": "words-6",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "area51 area51"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "words:word_freq"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "the"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "3"
+                  }
+                ],
+                "kind": "tuple"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "cat"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "2"
+                  }
+                ],
+                "kind": "tuple"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "and"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "1"
+                  }
+                ],
+                "kind": "tuple"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "dog"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "1"
+                  }
+                ],
+                "kind": "tuple"
+              },
+              {
+                "items": [
+                  {
+                    "kind": "str",
+                    "value": "saw"
+                  },
+                  {
+                    "kind": "int",
+                    "value": "1"
+                  }
+                ],
+                "kind": "tuple"
+              }
+            ],
+            "kind": "tuple"
+          }
+        }
+      },
+      "id": "words-7",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "The cat and the dog saw the cat."
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "words:word_freq"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

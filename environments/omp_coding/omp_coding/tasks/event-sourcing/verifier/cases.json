@@ -1,0 +1,1634 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "50"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "1"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "apply-deposit",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "balance": {
+                  "kind": "int",
+                  "value": "0"
+                },
+                "last_seq": {
+                  "kind": "int",
+                  "value": "0"
+                }
+              },
+              "kind": "object",
+              "type": "events:State"
+            },
+            {
+              "fields": {
+                "amount": {
+                  "kind": "int",
+                  "value": "50"
+                },
+                "kind": {
+                  "kind": "str",
+                  "value": "deposit"
+                },
+                "seq": {
+                  "kind": "int",
+                  "value": "1"
+                }
+              },
+              "kind": "object",
+              "type": "events:Event"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "events:apply_event"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "50"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "4"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "apply-withdraw",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "balance": {
+                  "kind": "int",
+                  "value": "80"
+                },
+                "last_seq": {
+                  "kind": "int",
+                  "value": "3"
+                }
+              },
+              "kind": "object",
+              "type": "events:State"
+            },
+            {
+              "fields": {
+                "amount": {
+                  "kind": "int",
+                  "value": "30"
+                },
+                "kind": {
+                  "kind": "str",
+                  "value": "withdraw"
+                },
+                "seq": {
+                  "kind": "int",
+                  "value": "4"
+                }
+              },
+              "kind": "object",
+              "type": "events:Event"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "events:apply_event"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "0"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "2"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "apply-withdraw-exact",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "balance": {
+                  "kind": "int",
+                  "value": "30"
+                },
+                "last_seq": {
+                  "kind": "int",
+                  "value": "1"
+                }
+              },
+              "kind": "object",
+              "type": "events:State"
+            },
+            {
+              "fields": {
+                "amount": {
+                  "kind": "int",
+                  "value": "30"
+                },
+                "kind": {
+                  "kind": "str",
+                  "value": "withdraw"
+                },
+                "seq": {
+                  "kind": "int",
+                  "value": "2"
+                }
+              },
+              "kind": "object",
+              "type": "events:Event"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "events:apply_event"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "insufficient funds at seq 7"
+              }
+            },
+            "kind": "object",
+            "type": "events:LedgerError"
+          }
+        }
+      },
+      "id": "apply-withdraw-over",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "balance": {
+                  "kind": "int",
+                  "value": "10"
+                },
+                "last_seq": {
+                  "kind": "int",
+                  "value": "6"
+                }
+              },
+              "kind": "object",
+              "type": "events:State"
+            },
+            {
+              "fields": {
+                "amount": {
+                  "kind": "int",
+                  "value": "11"
+                },
+                "kind": {
+                  "kind": "str",
+                  "value": "withdraw"
+                },
+                "seq": {
+                  "kind": "int",
+                  "value": "7"
+                }
+              },
+              "kind": "object",
+              "type": "events:Event"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "events:apply_event"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "40"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "5"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "apply-snapshot",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "balance": {
+                  "kind": "int",
+                  "value": "999"
+                },
+                "last_seq": {
+                  "kind": "int",
+                  "value": "2"
+                }
+              },
+              "kind": "object",
+              "type": "events:State"
+            },
+            {
+              "fields": {
+                "amount": {
+                  "kind": "int",
+                  "value": "40"
+                },
+                "kind": {
+                  "kind": "str",
+                  "value": "snapshot"
+                },
+                "seq": {
+                  "kind": "int",
+                  "value": "5"
+                }
+              },
+              "kind": "object",
+              "type": "events:Event"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "events:apply_event"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "70"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "4"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "apply-duplicate-seq",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "balance": {
+                  "kind": "int",
+                  "value": "70"
+                },
+                "last_seq": {
+                  "kind": "int",
+                  "value": "4"
+                }
+              },
+              "kind": "object",
+              "type": "events:State"
+            },
+            {
+              "fields": {
+                "amount": {
+                  "kind": "int",
+                  "value": "70"
+                },
+                "kind": {
+                  "kind": "str",
+                  "value": "deposit"
+                },
+                "seq": {
+                  "kind": "int",
+                  "value": "4"
+                }
+              },
+              "kind": "object",
+              "type": "events:Event"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "events:apply_event"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "70"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "4"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "apply-stale-seq",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "balance": {
+                  "kind": "int",
+                  "value": "70"
+                },
+                "last_seq": {
+                  "kind": "int",
+                  "value": "4"
+                }
+              },
+              "kind": "object",
+              "type": "events:State"
+            },
+            {
+              "fields": {
+                "amount": {
+                  "kind": "int",
+                  "value": "500"
+                },
+                "kind": {
+                  "kind": "str",
+                  "value": "withdraw"
+                },
+                "seq": {
+                  "kind": "int",
+                  "value": "2"
+                }
+              },
+              "kind": "object",
+              "type": "events:Event"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "events:apply_event"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "unknown kind: transfer"
+              }
+            },
+            "kind": "object",
+            "type": "events:LedgerError"
+          }
+        }
+      },
+      "id": "apply-unknown-kind",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "fields": {
+                "balance": {
+                  "kind": "int",
+                  "value": "0"
+                },
+                "last_seq": {
+                  "kind": "int",
+                  "value": "0"
+                }
+              },
+              "kind": "object",
+              "type": "events:State"
+            },
+            {
+              "fields": {
+                "amount": {
+                  "kind": "int",
+                  "value": "5"
+                },
+                "kind": {
+                  "kind": "str",
+                  "value": "transfer"
+                },
+                "seq": {
+                  "kind": "int",
+                  "value": "1"
+                }
+              },
+              "kind": "object",
+              "type": "events:Event"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "events:apply_event"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "0"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "0"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "replay-empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:replay"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "60"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "2"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "replay-in-order",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "100"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "40"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "withdraw"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:replay"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "60"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "2"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "replay-out-of-order",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "40"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "withdraw"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "100"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:replay"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "105"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "2"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "replay-duplicate-first",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "100"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "5"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "900"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:replay"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "107"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "2"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "replay-duplicate-later",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "7"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "100"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "900"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:replay"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "insufficient funds at seq 2"
+              }
+            },
+            "kind": "object",
+            "type": "events:LedgerError"
+          }
+        }
+      },
+      "id": "replay-error-stops",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "10"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "25"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "withdraw"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "1000"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "3"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:replay"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "300"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "3"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "replay-snapshot",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "10"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "500"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "snapshot"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "200"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "withdraw"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "3"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:replay"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "70"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "snapshot"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "2"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              },
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "5"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "deposit"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "3"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "compact-snapshot-tail",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "100"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "30"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "withdraw"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "2"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "5"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "3"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "int",
+              "value": "2"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:compact"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "100"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "snapshot"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "1"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              },
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "1"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "deposit"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "3"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              },
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "8"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "deposit"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "4"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "compact-sort-dedupe",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "8"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "4"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "100"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "1"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "3"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                },
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "999"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "deposit"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "3"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:compact"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "insufficient funds at seq 1"
+              }
+            },
+            "kind": "object",
+            "type": "events:LedgerError"
+          }
+        }
+      },
+      "id": "compact-replay-error",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [
+                {
+                  "fields": {
+                    "amount": {
+                      "kind": "int",
+                      "value": "1"
+                    },
+                    "kind": {
+                      "kind": "str",
+                      "value": "withdraw"
+                    },
+                    "seq": {
+                      "kind": "int",
+                      "value": "1"
+                    }
+                  },
+                  "kind": "object",
+                  "type": "events:Event"
+                }
+              ],
+              "kind": "list"
+            },
+            {
+              "kind": "int",
+              "value": "1"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:compact"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "items": [
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "0"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "snapshot"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "5"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              }
+            ],
+            "kind": "list"
+          }
+        }
+      },
+      "id": "compact-empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "items": [],
+              "kind": "list"
+            },
+            {
+              "kind": "int",
+              "value": "5"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "store:compact"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "from_compacted": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "93"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "4"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          },
+          "from_original": {
+            "fields": {
+              "balance": {
+                "kind": "int",
+                "value": "93"
+              },
+              "last_seq": {
+                "kind": "int",
+                "value": "4"
+              }
+            },
+            "kind": "object",
+            "type": "events:State"
+          }
+        }
+      },
+      "id": "compact-preserves-state",
+      "observe": [
+        "from_compacted",
+        "from_original"
+      ],
+      "operations": [
+        {
+          "op": "value",
+          "store": "log",
+          "value": {
+            "items": [
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "40"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "withdraw"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "2"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              },
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "100"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "deposit"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "1"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              },
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "3"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "deposit"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "4"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              },
+              {
+                "fields": {
+                  "amount": {
+                    "kind": "int",
+                    "value": "90"
+                  },
+                  "kind": {
+                    "kind": "str",
+                    "value": "snapshot"
+                  },
+                  "seq": {
+                    "kind": "int",
+                    "value": "3"
+                  }
+                },
+                "kind": "object",
+                "type": "events:Event"
+              }
+            ],
+            "kind": "list"
+          }
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "log"
+            },
+            {
+              "kind": "int",
+              "value": "3"
+            }
+          ],
+          "op": "call",
+          "store": "compacted",
+          "target": "store:compact"
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "compacted"
+            }
+          ],
+          "op": "call",
+          "store": "from_compacted",
+          "target": "store:replay"
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "log"
+            }
+          ],
+          "op": "call",
+          "store": "from_original",
+          "target": "store:replay"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}

@@ -1,0 +1,337 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": ""
+          }
+        }
+      },
+      "id": "encode-empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:encode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "1a"
+          }
+        }
+      },
+      "id": "encode-one",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "a"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:encode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "3a2b"
+          }
+        }
+      },
+      "id": "encode-runs",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "aaabb"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:encode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "1a1b1c"
+          }
+        }
+      },
+      "id": "encode-single-runs",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "abc"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:encode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "2a2b2a"
+          }
+        }
+      },
+      "id": "encode-repeated",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "aabbaa"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:encode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": ""
+          }
+        }
+      },
+      "id": "decode-empty",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": ""
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:decode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "aaabb"
+          }
+        }
+      },
+      "id": "decode-runs",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "3a2b"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:decode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "xxxxxxxxxxxx"
+          }
+        }
+      },
+      "id": "decode-multi",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "12x"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:decode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "invalid encoding"
+              }
+            },
+            "kind": "object",
+            "type": "rle:RleError"
+          }
+        }
+      },
+      "id": "decode-trailing",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "3a2"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:decode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "fields": {
+              "reason": {
+                "kind": "str",
+                "value": "invalid encoding"
+              }
+            },
+            "kind": "object",
+            "type": "rle:RleError"
+          }
+        }
+      },
+      "id": "decode-missing",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "abc"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:decode"
+        }
+      ]
+    },
+    {
+      "expected": {
+        "status": "ok",
+        "values": {
+          "result": {
+            "kind": "str",
+            "value": "hellooo"
+          }
+        }
+      },
+      "id": "round-trip",
+      "observe": [
+        "result"
+      ],
+      "operations": [
+        {
+          "args": [
+            {
+              "kind": "str",
+              "value": "hellooo"
+            }
+          ],
+          "op": "call",
+          "store": "encoded",
+          "target": "rle:encode"
+        },
+        {
+          "args": [
+            {
+              "kind": "ref",
+              "name": "encoded"
+            }
+          ],
+          "op": "call",
+          "store": "result",
+          "target": "rle:decode"
+        }
+      ]
+    }
+  ],
+  "runtime": "python",
+  "schema_version": 1
+}
