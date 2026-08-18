@@ -1297,11 +1297,10 @@ wheels = [
 
 [[package]]
 name = "omp-coding"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "environments/omp_coding" }
 dependencies = [
     { name = "aiohttp" },
-    { name = "datasets" },
     { name = "verifiers" },
 ]
 
@@ -1313,8 +1312,7 @@ metal = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11,<4" },
-    { name = "datasets", specifier = ">=3.3,<6" },
-    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'metal'", specifier = ">=0.31.3,<0.33" },
+    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'metal'", specifier = "==0.31.3" },
     { name = "verifiers", git = "https://github.com/PrimeIntellect-ai/verifiers.git?rev=0a4d872f021022310a08ec213a25f4efb4a0244a" },
 ]
 provides-extras = ["metal"]

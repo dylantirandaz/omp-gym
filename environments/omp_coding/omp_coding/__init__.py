@@ -9,6 +9,8 @@ import logging
 import secrets
 import shlex
 import socket
+import urllib.error
+import urllib.request
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -23,6 +25,7 @@ from verifiers.v1.runtimes import RuntimeConfig, provision_runtime
 from verifiers.v1.utils.artifacts import collect, restore
 from verifiers.v1.utils.compile import resolve_runtime_config
 
+from .generated_tasks import GenerationFailure, generate_training_tasks
 from .runtime import MAX_COMMAND_OUTPUT_BYTES, RUNTIME_IMAGE, SAFE_PATH, RuntimeFailure
 from .task import TaskLoadError, TaskSpec, load_task_suite
 from .verifier import (
@@ -50,6 +53,53 @@ OMP_DOWNLOAD_URL = (
     "omp-linux-arm64"
 )
 OMP_SHA256 = "36507ba3d98332f52649d22009ead86f154ab007cb169d68690fa2b0111769ad"
+OMP_MAX_BINARY_BYTES = 256 * 1024 * 1024
+OMP_HOST_CACHE = (
+    Path.home() / ".cache" / "omp-coding" / f"omp-{OMP_VERSION}-linux-arm64"
+)
+_OMP_BINARY_LOCK = asyncio.Lock()
+_OMP_BINARY_BYTES: bytes | None = None
+
+
+def _checked_omp_binary(data: bytes, source: str) -> bytes:
+    if len(data) > OMP_MAX_BINARY_BYTES:
+        raise RuntimeError(f"OMP binary from {source} exceeds the size limit")
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != OMP_SHA256:
+        raise RuntimeError(f"OMP binary from {source} has an invalid checksum")
+    return data
+
+
+def _load_omp_binary() -> bytes:
+    if OMP_HOST_CACHE.exists():
+        try:
+            if OMP_HOST_CACHE.stat().st_size > OMP_MAX_BINARY_BYTES:
+                raise RuntimeError("cached OMP binary exceeds the size limit")
+            data = OMP_HOST_CACHE.read_bytes()
+        except OSError as error:
+            raise RuntimeError(f"cached OMP binary is not readable: {error}") from error
+        return _checked_omp_binary(data, str(OMP_HOST_CACHE))
+    try:
+        # This constant is the pinned HTTPS release URL above.
+        with urllib.request.urlopen(  # noqa: S310
+            OMP_DOWNLOAD_URL,
+            timeout=300,
+        ) as response:
+            data = response.read(OMP_MAX_BINARY_BYTES + 1)
+    except (OSError, urllib.error.URLError) as error:
+        raise RuntimeError(f"OMP binary download failed: {error}") from error
+    return _checked_omp_binary(data, OMP_DOWNLOAD_URL)
+
+
+async def _omp_binary_bytes() -> bytes:
+    global _OMP_BINARY_BYTES
+    if _OMP_BINARY_BYTES is not None:
+        return _OMP_BINARY_BYTES
+    async with _OMP_BINARY_LOCK:
+        if _OMP_BINARY_BYTES is None:
+            _OMP_BINARY_BYTES = await asyncio.to_thread(_load_omp_binary)
+        return _OMP_BINARY_BYTES
+
 
 PYTHON_WORKER = "/opt/omp-gym-python-candidate.py"
 NODE_WORKER = "/opt/omp-gym-node-candidate.mjs"
@@ -137,6 +187,8 @@ class OmpTaskData(vf.TaskData):
     source_revision: str
     license: str
     seed: int
+    generated_tasks: int
+    generation_seed: int
 
 
 class OmpTask(vf.Task[OmpTaskData]):
@@ -204,9 +256,11 @@ class OmpTask(vf.Task[OmpTaskData]):
 
 
 class OmpTasksetConfig(vf.TasksetConfig):
-    """Select one fixed package task split."""
+    """Select one fixed split and optional deterministic training tasks."""
 
     split: Literal["train", "validation", "holdout"] = "train"
+    generated_tasks: int = 0
+    generation_seed: int = 0
 
 
 class OmpTaskset(vf.Taskset[OmpTask, OmpTasksetConfig]):
@@ -217,6 +271,18 @@ class OmpTaskset(vf.Taskset[OmpTask, OmpTasksetConfig]):
         if isinstance(loaded, TaskLoadError):
             raise ValueError(loaded.reason)
         selected = [task for task in loaded if task.split == self.config.split]
+        if self.config.generated_tasks:
+            if self.config.split != "train":
+                raise ValueError(
+                    "generated tasks are available only in the train split"
+                )
+            generated = generate_training_tasks(
+                count=self.config.generated_tasks,
+                generation_seed=self.config.generation_seed,
+            )
+            if isinstance(generated, GenerationFailure):
+                raise ValueError(generated.reason)
+            selected.extend(generated)
         if not selected:
             raise ValueError(f"task split has no tasks: {self.config.split}")
 
@@ -271,6 +337,8 @@ class OmpTaskset(vf.Taskset[OmpTask, OmpTasksetConfig]):
                 source_revision=spec.source_revision,
                 license=spec.license,
                 seed=spec.seed,
+                generated_tasks=self.config.generated_tasks,
+                generation_seed=self.config.generation_seed,
             )
             tasks.append(OmpTask(data, self.config.task, spec=spec, suite=suite))
         return tasks
@@ -295,6 +363,9 @@ class OmpHarness(vf.Harness[OmpHarnessConfig]):
         await runtime.write(CLEANER, _support_file("_container_tool.py"))
         for name in RPC_SUPPORT_FILES:
             await runtime.write(f"/opt/omp_rpc/{name}", _rpc_support_file(name))
+        binary = await _omp_binary_bytes()
+        temporary = f"{OMP_BINARY}.download"
+        await runtime.write(temporary, binary)
         script = f"""
 set -eu
 if [ "$(uname -m)" != "aarch64" ]; then
@@ -303,15 +374,8 @@ if [ "$(uname -m)" != "aarch64" ]; then
 fi
 command -v python3 >/dev/null
 command -v setpriv >/dev/null
-mkdir -p {shlex.quote(str(Path(OMP_BINARY).parent))}
-if [ -x {shlex.quote(OMP_BINARY)} ] && printf '%s  %s\n' {shlex.quote(OMP_SHA256)} {shlex.quote(OMP_BINARY)} | sha256sum -c - >/dev/null 2>&1; then
-    {shlex.quote(OMP_BINARY)} --version
-    exit 0
-fi
-temporary={shlex.quote(OMP_BINARY)}.download
+temporary={shlex.quote(temporary)}
 trap 'rm -f "$temporary"' EXIT
-curl --fail --location --silent --show-error --connect-timeout 10 --max-time 300 \
-    {shlex.quote(OMP_DOWNLOAD_URL)} --output "$temporary"
 printf '%s  %s\n' {shlex.quote(OMP_SHA256)} "$temporary" | sha256sum -c -
 chmod 0755 "$temporary"
 mv -f "$temporary" {shlex.quote(OMP_BINARY)}
@@ -322,7 +386,7 @@ if [ "$version" != {shlex.quote(OMP_VERSION_OUTPUT)} ]; then
 fi
 printf '%s\n' "$version"
 """
-        logger.info("omp: ensuring pinned release %s is installed", self.config.version)
+        logger.info("omp: installing pinned release %s", self.config.version)
         result = await runtime.run(["sh", "-c", script], {})
         if result.exit_code != 0:
             detail = (result.stderr or result.stdout).strip()[-1000:]
@@ -686,6 +750,8 @@ def _task_for_data(data: OmpTaskData) -> OmpTask:
         OmpTasksetConfig(
             id="omp-coding",
             split=data.split,
+            generated_tasks=data.generated_tasks,
+            generation_seed=data.generation_seed,
         )
     )
     matches = [task for task in taskset if task.data.task_id == data.task_id]

@@ -77,13 +77,22 @@ jobs:
           assert len(task_configs) == 18, sorted(task_configs)
           assert len(case_files) == 18, sorted(case_files)
           assert rpc_files <= names
-          assert "omp_coding/training.py" in names
+          required_modules = {
+              "omp_coding/evaluation.py",
+              "omp_coding/generated_tasks.py",
+              "omp_coding/hardware.py",
+              "omp_coding/masked_lora.py",
+              "omp_coding/metrics.py",
+              "omp_coding/protocol.py",
+              "omp_coding/training.py",
+          }
+          assert required_modules <= names
           assert "omp_coding/_runtime_harness.py" in names
           assert "omp_coding/_python_candidate.py" in names
           assert "omp_coding/_node_candidate.mjs" in names
           assert "omp_coding/_container_tool.py" in names
           assert "Requires-Python: <3.14,>=3.11" in metadata
-          assert "Version: 1.0.0" in metadata
+          assert "Version: 1.1.0" in metadata
           assert "@0a4d872f021022310a08ec213a25f4efb4a0244a" in metadata
           assert "Requires-Dist: omp-gym" not in metadata
           PY

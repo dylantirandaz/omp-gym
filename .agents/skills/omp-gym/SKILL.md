@@ -5,7 +5,7 @@ description: Operate the Prime Verifiers v1 OMP coding environment. Use it to ru
 
 # omp-gym operator
 
-Use `omp-coding` version `1.0.0`. Use Prime Verifiers v1 for all rollouts. Do
+Use `omp-coding` version `1.1.0`. Use Prime Verifiers v1 for all rollouts. Do
 not use the removed local runner, model shim, ledger, dashboard, or custom RL
 commands.
 
@@ -45,10 +45,10 @@ eval omp-coding \
   --max-concurrent 1
 ```
 
-Use 10 train tasks for trace collection. Use 4 validation tasks for model
-selection. Use 4 holdout tasks only for the final result. Keep task count,
-rollout count, sampling values, token limits, and model endpoint fixed for each
-comparison.
+Use the 10 fixed train tasks and deterministic generated tasks for trace
+collection. Use 4 validation tasks for model selection. Use 4 holdout tasks
+only for the final result. Keep task count, rollout count, sampling values,
+token limits, and model endpoint fixed for each comparison.
 
 Each rollout must run the real OMP 17.2.15 process. OMP must call the five host
 tools through the Verifiers route. A fresh container must grade the output.
@@ -61,13 +61,17 @@ Use successful train and validation result directories:
 ```sh
 uv run --package omp-coding --extra metal omp-coding-train export \
   outputs/TRAIN_RUN outputs/VALIDATION_RUN \
-  --output dataset/VERSION
+  --output dataset/VERSION \
+  --minimum-train-trajectories 200 \
+  --minimum-validation-trajectories 4
 ```
 
-The exporter accepts only a `tests` reward of `1.0`. It writes one sample for
-each sampled assistant turn. It keeps the exact branch, message order, tool
-schemas, tool call identifiers, tool result identifiers, and tool arguments.
-It requires train and validation samples.
+The exporter accepts only completed traces with a `tests` reward of `1.0`. It
+writes one sample for each successful trajectory. The sample contains all
+assistant action turns and the final assistant turn. It keeps the exact branch,
+message order, tool schemas, tool call identifiers, tool result identifiers,
+and tool arguments.
+It requires at least 200 train trajectories and 4 validation trajectories.
 
 Do not train on holdout traces. Do not train on failed or incomplete traces.
 
@@ -78,44 +82,43 @@ Use a new adapter path for each run:
 ```sh
 uv run --package omp-coding --extra metal omp-coding-train run \
   --data dataset/VERSION \
-  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+  --model mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --adapter adapters/VERSION \
-  --iters 20 \
-  --max-seq-length 4096 \
+  --iters 300 \
+  --checkpoint-interval 50 \
+  --max-seq-length 8192 \
   --num-layers 8
 ```
 
 The command runs the Metal preflight again. It uses the selected model tokenizer
 and keeps only complete samples that fit the sequence limit. It reports the kept
-and removed sample counts. It trains with prompt masking. Each reported loss
+and removed sample counts. It calculates loss on all assistant turns and masks
+the system prompt, user turns, and tool results. Each reported loss
 must be finite. The command installs `adapters.safetensors` and
 `adapter_config.json` only after all checks pass.
 
-## Serve and compare
+## Compare
 
-MLX-LM 0.30 does not apply its command-line adapter when a request names a
-model. Fuse the adapter before evaluation. Do not put a model shim in front of
-the server:
+Use the built-in evaluator. It fuses one checkpoint and controls both local
+Metal servers:
 
 ```sh
-uv run --package omp-coding --extra metal python -c \
-  "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/Qwen2.5-0.5B-Instruct-4bit')"
-uv run --package omp-coding --extra metal python -m mlx_lm fuse \
-  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
-  --adapter-path adapters/VERSION \
-  --save-path adapters/VERSION-fused
-uv run --package omp-coding --extra metal python -m mlx_lm server \
-  --model adapters/VERSION-fused \
-  --host 127.0.0.1 \
-  --port 8080 \
-  --max-tokens 4096
+uv run --package omp-coding --extra metal omp-coding-evaluate \
+  --model mlx-community/Qwen3-4B-Instruct-2507-4bit \
+  --data dataset/VERSION \
+  --adapter adapters/VERSION \
+  --weights adapters/VERSION/0000300_adapters.safetensors \
+  --workspace . \
+  --split validation \
+  --max-tokens 1024 \
+  --num-rollouts 1 \
+  --output adapters/VERSION/comparison.json
 ```
 
-Run `eval omp-coding --model default_model` against
-`http://127.0.0.1:8080/v1`. Serve the unfused base model for the baseline.
-Use `default_model` for both runs. Use the same MLX version, server settings,
-task split, and sampling settings. A saved adapter and a lower training loss
-do not prove an improvement.
+The command checks one native OMP tool response before each evaluation. It
+uses the same task split, prompt, parser, temperature, token limit, rollout
+count, and model endpoint for the base model and fused adapter. A saved
+adapter and a lower training loss do not prove an improvement.
 
 Report these values:
 

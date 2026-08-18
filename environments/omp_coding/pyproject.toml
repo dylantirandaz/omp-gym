@@ -1,6 +1,6 @@
 [project]
 name = "omp-coding"
-version = "1.0.0"
+version = "1.1.0"
 description = "Sealed coding tasks driven through OMP on Prime Verifiers v1."
 requires-python = ">=3.11,<3.14"
 readme = "README.md"
@@ -8,17 +8,19 @@ license = "MIT"
 tags = ["coding", "agent", "tools", "omp"]
 dependencies = [
     "aiohttp>=3.11,<4",
-    "datasets>=3.3,<6",
     "verifiers @ git+https://github.com/PrimeIntellect-ai/verifiers.git@0a4d872f021022310a08ec213a25f4efb4a0244a",
 ]
 
 [project.optional-dependencies]
 metal = [
-    "mlx-lm>=0.31.3,<0.33; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "mlx-lm==0.31.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [project.scripts]
 omp-coding-train = "omp_coding.training:main"
+omp-coding-protocol = "omp_coding.protocol:main"
+omp-coding-metrics = "omp_coding.metrics:main"
+omp-coding-evaluate = "omp_coding.evaluation:main"
 
 [build-system]
 requires = ["hatchling"]

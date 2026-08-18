@@ -1,6 +1,6 @@
 # omp-coding
 
-`omp-coding` version `1.0.0` is a Prime Verifiers v1 environment. Each rollout
+`omp-coding` version `1.1.0` is a Prime Verifiers v1 environment. Each rollout
 runs one real OMP episode in a new task container. Prime records the policy
 turns. A second container grades the declared output files with sealed cases.
 
@@ -86,21 +86,49 @@ uv run --package omp-coding --extra metal omp-coding-train export \
   --output dataset/v1
 ```
 
+The exporter accepts only completed traces with a `tests` reward of `1.0`. It
+writes one sample for each successful trajectory. Each sample has all assistant
+action turns and the final assistant turn.
+
 Run MLX LoRA training:
 
 ```sh
 uv run --package omp-coding --extra metal omp-coding-train run \
   --data dataset/v1 \
-  --model mlx-community/Qwen2.5-0.5B-Instruct-4bit \
+  --model mlx-community/Qwen3-4B-Instruct-2507-4bit \
   --adapter adapters/omp-coding-v1 \
-  --iters 20
+  --iters 300 \
+  --checkpoint-interval 50 \
+  --max-seq-length 8192 \
+  --num-layers 8
 ```
 
 The command prints the Metal backend, `gpu:0`, device name, architecture,
 memory, MLX version, and checked result before training. It uses the selected
 model tokenizer. It keeps only complete samples that fit the sequence limit,
-and it reports the kept and removed sample counts. Each reported loss must be
+and it reports the kept and removed sample counts. It calculates loss on all
+assistant turns. It masks the system prompt, user turns, and tool results.
+Each reported loss must be
 finite. The command installs the adapter files only after all checks pass.
+
+Compare the base model with a saved checkpoint:
+
+```sh
+uv run --package omp-coding --extra metal omp-coding-evaluate \
+  --model mlx-community/Qwen3-4B-Instruct-2507-4bit \
+  --data dataset/v1 \
+  --adapter adapters/omp-coding-v1 \
+  --weights adapters/omp-coding-v1/0000300_adapters.safetensors \
+  --workspace . \
+  --split validation \
+  --max-tokens 1024 \
+  --num-rollouts 1 \
+  --output adapters/omp-coding-v1/comparison.json
+```
+
+The comparison uses the same tasks, parser, prompt, sampling values, and token
+limits for the base model and the fused adapter. It reports the sealed reward
+and the OMP tool-protocol rates.
 
 ## Release
 
@@ -111,4 +139,5 @@ uv build --wheel environments/omp_coding --out-dir dist
 ```
 
 Inspect the wheel before publication. It must contain `omp_coding/tasks`, the
-five OMP RPC files, the three runtime workers, and `training.py`.
+five OMP RPC files, the three runtime workers, and the training and evaluation
+modules.
