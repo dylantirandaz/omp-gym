@@ -370,7 +370,7 @@ def load_protocol_context(data_dir: Path) -> ProtocolContext | ProtocolFailure:
     )
 
 
-def _schema_type_error(value: object, expected: str) -> str | None:
+def _scalar_type_error(value: object, expected: str) -> str | None:
     if expected == "string":
         return None if isinstance(value, str) else "must be a string"
     if expected == "integer":
@@ -387,13 +387,33 @@ def _schema_type_error(value: object, expected: str) -> str | None:
         )
     if expected == "boolean":
         return None if isinstance(value, bool) else "must be a boolean"
+    if expected == "object":
+        return None if isinstance(value, Mapping) else "must be an object"
+    if expected == "array":
+        return None if isinstance(value, list) else "must be an array"
+    if expected == "null":
+        return None if value is None else "must be null"
     return f"uses unsupported schema type {expected}"
+
+
+def _schema_type_error(value: object, expected: object) -> str | None:
+    # Native OMP tools declare nullable fields as `["number", "null"]`.
+    if isinstance(expected, list):
+        if not expected or not all(isinstance(item, str) for item in expected):
+            return "has an invalid schema type list"
+        errors = [_scalar_type_error(value, item) for item in expected]
+        if any(error is None for error in errors):
+            return None
+        return f"must be one of {expected}"
+    if not isinstance(expected, str):
+        return "has no schema type"
+    return _scalar_type_error(value, expected)
 
 
 def validate_tool_arguments(
     schema: Mapping[str, object], arguments: Mapping[str, object]
 ) -> str | None:
-    """Validate the strict object schema used by the five OMP tools."""
+    """Validate a flat object schema (sandbox tools and native OMP tools)."""
     if schema.get("type") != "object":
         return "tool parameters are not an object schema"
     raw_properties = schema.get("properties")
@@ -414,10 +434,7 @@ def validate_tool_arguments(
         raw_property = raw_properties.get(name)
         if not isinstance(raw_property, Mapping):
             return f"tool argument schema is missing: {name}"
-        expected_type = raw_property.get("type")
-        if not isinstance(expected_type, str):
-            return f"tool argument type is missing: {name}"
-        type_error = _schema_type_error(value, expected_type)
+        type_error = _schema_type_error(value, raw_property.get("type"))
         if type_error is not None:
             return f"tool argument {name} {type_error}"
         if isinstance(value, int) and not isinstance(value, bool):

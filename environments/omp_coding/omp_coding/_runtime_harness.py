@@ -1,4 +1,4 @@
-"""Run OMP RPC with tools that call the host controller."""
+"""Run OMP RPC with host-controller tools or with OMP's native built-in tools."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from omp_rpc import RpcClient, RpcError, host_tool  # noqa: E402
 
 MAX_CONFIG_BYTES = 1024 * 1024
 TOOL_TIMEOUT_SECONDS = 620
+NATIVE_TOOLS = "native"
+NATIVE_TOOL_NAMES = ("read", "write", "edit", "bash", "grep", "glob")
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,8 @@ class HarnessConfig:
     model: str
     prompt: str
     system_prompt: str
+    tools: str | None
+    timeout_seconds: int
 
 
 @dataclass(frozen=True)
@@ -105,12 +109,24 @@ def _load_config(path: Path) -> HarnessConfig:
         raise ValueError(f"harness configuration is invalid: {error}") from error
     if not isinstance(document, dict):
         raise ValueError("harness configuration must be an object")
+    tools = document.get("tools")
+    if tools is not None and tools != NATIVE_TOOLS:
+        raise ValueError(f"tools must be absent or {NATIVE_TOOLS!r}")
+    timeout_seconds = document.get("timeout_seconds", TOOL_TIMEOUT_SECONDS)
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, int)
+        or timeout_seconds < 1
+    ):
+        raise ValueError("timeout_seconds must be a positive integer")
     return HarnessConfig(
         executable=_required_string(document, "executable"),
         provider=_required_string(document, "provider"),
         model=_required_string(document, "model"),
         prompt=_required_string(document, "prompt"),
         system_prompt=_required_string(document, "system_prompt"),
+        tools=tools,
+        timeout_seconds=timeout_seconds,
     )
 
 
@@ -215,23 +231,21 @@ def _fail(reason: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        _fail("usage: _runtime_harness.py CONFIG")
-    try:
-        config = _load_config(Path(sys.argv[1]))
-        endpoint = _tool_endpoint()
-    except ValueError as error:
-        _fail(str(error))
-
-    client = RpcClient(
+def _client(config: HarnessConfig) -> RpcClient:
+    if config.tools == NATIVE_TOOLS:
+        tools: tuple[str, ...] = NATIVE_TOOL_NAMES
+        custom_tools: tuple[object, ...] = ()
+    else:
+        tools = ()
+        custom_tools = _tools(_tool_endpoint())
+    return RpcClient(
         executable=config.executable,
         provider=config.provider,
         model=config.model,
         cwd="/workspace",
         append_system_prompt=config.system_prompt,
-        tools=(),
-        custom_tools=_tools(endpoint),
+        tools=tools,
+        custom_tools=custom_tools,
         no_session=True,
         no_skills=True,
         no_rules=True,
@@ -247,10 +261,20 @@ def main() -> int:
         max_event_history=20_000,
         max_stderr_chunks=512,
     )
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        _fail("usage: _runtime_harness.py CONFIG")
+    try:
+        config = _load_config(Path(sys.argv[1]))
+        client = _client(config)
+    except ValueError as error:
+        _fail(str(error))
     try:
         client.start()
         client.install_headless_ui()
-        turn = client.prompt_and_wait(config.prompt, timeout=TOOL_TIMEOUT_SECONDS)
+        turn = client.prompt_and_wait(config.prompt, timeout=config.timeout_seconds)
         print(
             json.dumps(
                 {"assistant_text": turn.assistant_text},

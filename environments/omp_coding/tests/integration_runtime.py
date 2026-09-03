@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from typing import Literal
 
-from omp_coding import (
+from omp_coding.environment import (
     COMMAND_USER_ID,
     OMP_BINARY,
     OMP_VERSION,
@@ -93,7 +93,7 @@ async def run() -> dict[str, object]:
             )
 
         result = await run_verifier_cases(
-            task.suite,
+            task.call_cases_suite,
             invoke,
             timeout_seconds=float(task.spec.max_time_seconds),
         )

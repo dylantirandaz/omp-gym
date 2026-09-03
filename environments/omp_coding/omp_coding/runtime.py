@@ -54,7 +54,12 @@ class WorkspaceInventory:
     digest: str
 
 
-def inspect_plain_tree(root: Path) -> WorkspaceInventory | RuntimeFailure:
+def inspect_plain_tree(
+    root: Path,
+    *,
+    max_files: int = MAX_FILES,
+    max_bytes: int = WORKSPACE_BYTES,
+) -> WorkspaceInventory | RuntimeFailure:
     """Hash a bounded tree and reject links and special files."""
     try:
         resolved_root = root.resolve(strict=True)
@@ -103,15 +108,15 @@ def inspect_plain_tree(root: Path) -> WorkspaceInventory | RuntimeFailure:
 
             file_count += 1
             total_bytes += metadata.st_size
-            if file_count > MAX_FILES:
+            if file_count > max_files:
                 return RuntimeFailure(
                     "invalid_workspace",
-                    f"workspace has more than {MAX_FILES} files",
+                    f"workspace has more than {max_files} files",
                 )
-            if total_bytes > WORKSPACE_BYTES:
+            if total_bytes > max_bytes:
                 return RuntimeFailure(
                     "invalid_workspace",
-                    f"workspace is larger than {WORKSPACE_BYTES // (1024 * 1024)} MiB",
+                    f"workspace is larger than {max_bytes // (1024 * 1024)} MiB",
                 )
 
             encoded_path = relative.encode()

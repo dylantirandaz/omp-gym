@@ -2,36 +2,47 @@
 
 `omp-gym` is Silico for coding agents. It is a training environment for
 coding models. It uses Prime Verifiers v1 and the real
-[Oh My Pi](https://github.com/can1357/oh-my-pi) agent. It records complete
-tool-use trajectories, checks the changed files in sealed containers, exports
-successful trajectories, and trains MLX LoRA adapters on Apple silicon.
+[Oh My Pi](https://github.com/can1357/oh-my-pi) agent. It turns your own OMP
+sessions into sealed repository tasks, runs those tasks as evaluations and
+benchmarks, records complete tool-use trajectories, checks the changed files
+in sealed containers, exports successful trajectories, and trains MLX LoRA
+adapters on Apple silicon.
 
-The active environment is `omp-coding` version `1.1.0`.
+The active environment is `omp-coding` version `1.2.0`.
 
 ## Data flow
 
 ```text
-Prime eval
+~/.omp/agent/sessions/*.jsonl
+  -> omp-coding-mint (episode, git-anchored start state, fail -> pass test run)
+  -> task directory with a Docker image, sealed tests, and a reference patch
+  -> Prime eval with --env.taskset.tasks-dir
   -> OmpHarness
-  -> pinned OMP 17.2.15 in an arm64 Linux container
-  -> five OMP tools through an authenticated host route
-  -> bounded task workspace
-  -> fresh verifier container
+  -> pinned OMP 17.2.15 in the task image with its native tools
+  -> workspace patch, graded by the sealed test command in a fresh container
   -> sealed reward and Prime trace
-  -> successful full-trajectory export
+  -> omp-coding-bench leaderboard, or successful full-trajectory export
   -> assistant-masked MLX LoRA training
   -> fixed base and adapter comparison
 ```
 
-The five tools are `sandbox_read`, `sandbox_write`, `sandbox_edit`,
-`sandbox_exec`, and `run_tests`. The model cannot read the sealed cases. The
-model can change only the declared task files. Each `run_tests` call checks a
-new file snapshot in a different container.
+Two task kinds share the environment:
+
+- Repository tasks (schema 3, `test-command-v1`) are minted from sessions.
+  OMP runs with its native `read`, `write`, `edit`, `bash`, `grep`, and
+  `glob` tools inside the task image. The sealed test command grades the
+  final workspace after the trusted test files are restored.
+- Packaged tasks (schema 2, `call-cases-v1`) are the 18 fixed public tasks.
+  OMP gets five host tools (`sandbox_read`, `sandbox_write`, `sandbox_edit`,
+  `sandbox_exec`, `run_tests`) and can change only the declared files. Each
+  `run_tests` call checks a new file snapshot in a different container.
 
 ## Requirements
 
-- macOS or Linux with Docker.
-- An arm64 host or an arm64 Docker service.
+- Minting: any host that holds the sessions, with `git` and Docker. The
+  minter is standard-library Python and runs on Windows, macOS, and Linux.
+- Evaluation and training: macOS or Linux with Docker (Prime Verifiers does
+  not import on Windows; use WSL 2 with Docker Desktop's WSL integration).
 - Python 3.11, 3.12, or 3.13.
 - Prime CLI 0.6.23.
 - One OpenAI-compatible model endpoint.
@@ -57,6 +68,106 @@ The preflight reports the Metal backend, `gpu:0`, the Apple device name, the
 architecture, memory, MLX version, data type, and checked result. It runs one
 real matrix operation and checks its output. It does not replace a training
 run.
+
+## Mint tasks from your sessions
+
+OMP keeps every session under `~/.omp/agent/sessions`. The minter reads them,
+splits each session into episodes (one per user request), and keeps an
+episode only when it can prove it: the repository must still exist on this
+host, a commit must match the files as they were before the agent's first
+edit, and the agent must have run a recognized test command that failed and
+then passed after its edits. There are no synthetic tests.
+
+See what would be minted, and why episodes are rejected:
+
+```sh
+uv run --package omp-coding omp-coding-mint scan
+```
+
+Mint the tasks:
+
+```sh
+uv run --package omp-coding omp-coding-mint mint --output tasks/minted
+```
+
+For each accepted episode the minter writes `tasks/minted/<repo>-<session>-e<n>/`
+with `task.toml` (schema 3), a `Dockerfile`, the repository start state under
+`workspace/`, the trusted end-state test files under `verifier/files/`, the
+reference patch, and `provenance.json` (session id, models, tokens, cost, base
+commit, and both gate runs). It then builds the image, runs the sealed test
+command on the start state (must fail) and on the reference patch (must pass),
+and records the passed case count as `expected_cases`. Tasks that fail the
+gate are deleted unless you pass `--keep-failed`; edit the `Dockerfile` and
+run `omp-coding-mint gate TASK_DIR` to rebuild and regate.
+
+Tasks from the same repository share a split (`--split auto`, the default),
+or force one with `--split holdout`. Minted tasks are `sensitive_data =
+"private"`: `tasks/` is ignored by Git, the prompt is scrubbed of the home
+directory, and episodes whose prompt, patch, or tests look like they contain a
+secret are rejected. Prior episodes of the same session are overlaid on the
+base commit; edits that OMP persisted without full file contents make an
+episode unmintable, and the scan output says so.
+
+## Evaluate minted tasks
+
+Point the taskset at the minted directory. Repository tasks need a larger
+token budget and context window than the packaged tasks:
+
+```sh
+env -u VIRTUAL_ENV uv run eval omp-coding \
+  --model openai/gpt-4.1-mini \
+  --no-push \
+  --no-rich \
+  --env.taskset.tasks-dir tasks/minted \
+  --env.taskset.split holdout \
+  --env.agent.max-total-tokens 400000 \
+  --env.agent.harness.context-window 200000 \
+  --client.base-url https://openrouter.ai/api/v1 \
+  --client.api-key-var OPENROUTER_API_KEY \
+  --max-concurrent 2
+```
+
+Each rollout starts a container from the task image, hands the repository to
+OMP with its native tools, and records the workspace patch. A fresh container
+applies the patch, restores the trusted test files, and runs the sealed
+command. The `tests` reward is the fraction of passed cases; a run that
+removes tests, times out, or produces no test summary scores zero.
+
+## Benchmark models
+
+Run several models on the same task set and build a leaderboard:
+
+```sh
+uv run --package omp-coding omp-coding-bench run \
+  --models openai/gpt-4.1-mini,anthropic/claude-sonnet-4 \
+  --tasks-dir tasks/minted \
+  --split holdout \
+  --num-rollouts 3 \
+  --client-base-url https://openrouter.ai/api/v1 \
+  --client-api-key-var OPENROUTER_API_KEY \
+  --output bench/v1
+```
+
+Or aggregate result directories you already have:
+
+```sh
+uv run --package omp-coding omp-coding-bench aggregate \
+  outputs/RUN_A outputs/RUN_B --tasks-dir tasks/minted --output bench/v1
+```
+
+`bench/v1/bench.md` and `bench.json` hold the leaderboard (mean reward, pass
+rate, pass@k, error rate, tokens, tool calls, seconds), the per-task matrix,
+the runs, and a reference row per model that produced the original sessions.
+Runs are comparable only when their task-set digest matches; the report warns
+otherwise.
+
+## Train on minted tasks
+
+The minted directory is the RL environment: `prime-rl` and `eval` load the
+same `omp-coding` package with `--env.taskset.tasks-dir`, so the benchmark
+reward and the training reward come from the same sealed grader. The trace
+exporter below also accepts native-tool traces; a dataset cannot mix the two
+tool contracts.
 
 ## Collect trajectories
 
@@ -156,18 +267,24 @@ final result.
 
 ## Task contract
 
-Each task is in `environments/omp_coding/omp_coding/tasks`. Each task declares:
+Packaged tasks live in `environments/omp_coding/omp_coding/tasks`; minted
+tasks live wherever `--env.taskset.tasks-dir` points. Every task declares:
 
 - A fixed task and revision identifier.
 - A train, validation, or holdout split.
-- A pinned arm64 Linux image.
+- A pinned Linux image (the shared arm64 image for schema 2; a per-task
+  `omp-gym/<name>:<revision>` image with its digest and architecture for
+  schema 3).
 - CPU, memory, process, disk, home, and time limits.
-- Public context files and editable files.
-- One sealed structured case file.
-- Source, source revision, license, and data class.
+- Source, source revision, license, and data class (`public` or `private`).
+- Schema 2: public context files, editable files, and one sealed structured
+  case file.
+- Schema 3: one sealed test command, the sealed test files, and the reference
+  patch, plus the `Dockerfile` that bakes the repository start state into the
+  image and tags it `omp-gym-start`.
 
 The task loader rejects unknown fields, links, special files, wrong image data,
-wrong runtime data, duplicate identifiers, invalid limits, and case files in
+wrong runtime data, duplicate identifiers, invalid limits, and sealed files in
 the public workspace.
 
 ## Verification
@@ -178,8 +295,11 @@ Run the local contracts:
 uv run ruff check environments/omp_coding/omp_coding \
   environments/omp_coding/tests
 uv run --package omp-coding python -m unittest discover \
-  -s environments/omp_coding/tests -p 'test_v1.py'
+  -s environments/omp_coding/tests -p 'test_*.py'
 ```
+
+The session, minting, test-command, and benchmark tests run on any host. Set
+`OMP_GYM_DOCKER_TESTS=1` to also build a real image and run the gate.
 
 Run the real Docker path:
 

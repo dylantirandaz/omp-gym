@@ -17,3 +17,5 @@ experiments/
 gym.toml
 imported/
 .omp-gym/
+/tasks/
+/bench/

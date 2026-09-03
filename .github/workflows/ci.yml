@@ -18,7 +18,7 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - run: uv sync --package omp-coding
       - run: uv run ruff check environments/omp_coding/omp_coding environments/omp_coding/tests
-      - run: uv run --package omp-coding python -m unittest discover -s environments/omp_coding/tests -p 'test_v1.py'
+      - run: uv run --package omp-coding python -m unittest discover -s environments/omp_coding/tests -p 'test_*.py'
       - if: runner.os == 'macOS'
         run: uv run --package omp-coding --extra metal omp-coding-train preflight
 
@@ -78,12 +78,17 @@ jobs:
           assert len(case_files) == 18, sorted(case_files)
           assert rpc_files <= names
           required_modules = {
+              "omp_coding/bench.py",
+              "omp_coding/environment.py",
               "omp_coding/evaluation.py",
               "omp_coding/generated_tasks.py",
               "omp_coding/hardware.py",
               "omp_coding/masked_lora.py",
               "omp_coding/metrics.py",
+              "omp_coding/mint.py",
               "omp_coding/protocol.py",
+              "omp_coding/sessions.py",
+              "omp_coding/testcommand.py",
               "omp_coding/training.py",
           }
           assert required_modules <= names
@@ -92,7 +97,7 @@ jobs:
           assert "omp_coding/_node_candidate.mjs" in names
           assert "omp_coding/_container_tool.py" in names
           assert "Requires-Python: <3.14,>=3.11" in metadata
-          assert "Version: 1.1.0" in metadata
+          assert "Version: 1.2.0" in metadata
           assert "@0a4d872f021022310a08ec213a25f4efb4a0244a" in metadata
           assert "Requires-Dist: omp-gym" not in metadata
           PY

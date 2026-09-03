@@ -43,9 +43,21 @@ ActionKind: TypeAlias = Literal[
     "recovery",
     "final",
 ]
-REQUIRED_ACTION_KINDS: frozenset[ActionKind] = frozenset(
+ALL_ACTION_KINDS: frozenset[ActionKind] = frozenset(
     {"read", "write", "edit", "execute", "test", "recovery", "final"}
 )
+REQUIRED_ACTION_KINDS: frozenset[ActionKind] = ALL_ACTION_KINDS
+RPC_HOST_TOOL_CONTRACT = "rpc-host-v1"
+NATIVE_TOOL_CONTRACT = "omp-native-v1"
+# Traces written before info.omp_tool_contract existed came from the sealed
+# five-tool RPC host, so a missing contract means rpc-host-v1.
+DEFAULT_TOOL_CONTRACT = RPC_HOST_TOOL_CONTRACT
+# Native OMP tools expose no sealed test runner and report failures as plain
+# text, so a native dataset cannot promise test or recovery turns.
+REQUIRED_ACTION_KINDS_BY_CONTRACT: dict[str, frozenset[ActionKind]] = {
+    RPC_HOST_TOOL_CONTRACT: ALL_ACTION_KINDS,
+    NATIVE_TOOL_CONTRACT: frozenset({"read", "write", "edit", "execute", "final"}),
+}
 MINIMUM_SEQUENCE_LENGTH = 8192
 MINIMUM_TRAIN_TRAJECTORIES = 200
 MINIMUM_VALIDATION_TRAJECTORIES = 4
@@ -63,6 +75,12 @@ ACTION_BY_TOOL: dict[str, ActionKind] = {
     "sandbox_edit": "edit",
     "sandbox_exec": "execute",
     "run_tests": "test",
+    "read": "read",
+    "grep": "read",
+    "glob": "read",
+    "write": "write",
+    "edit": "edit",
+    "bash": "execute",
 }
 
 
@@ -84,6 +102,7 @@ class ExportReport:
     test_samples: int
     action_counts: tuple[tuple[ActionKind, int], ...]
     dataset_sha256: str
+    tool_contract: str
 
 
 @dataclass(frozen=True)
@@ -94,6 +113,7 @@ class DatasetManifest:
     valid_trajectories: int
     action_counts: tuple[tuple[ActionKind, int], ...]
     samples_per_trace_limit: int
+    tool_contract: str = DEFAULT_TOOL_CONTRACT
 
 
 @dataclass(frozen=True)
@@ -142,6 +162,7 @@ class _PreparedTrainingData:
 class _TraceConversion:
     split: str
     trace_id: str
+    tool_contract: str
     samples: tuple[dict[str, object], ...]
 
 
@@ -350,6 +371,17 @@ def _target_kinds(
     return frozenset(kinds)
 
 
+def trace_tool_contract(trace: Mapping[str, object]) -> str | ExportFailure:
+    """Read the OMP tool contract a trace was produced under."""
+    info = trace.get("info")
+    contract = info.get("omp_tool_contract") if isinstance(info, Mapping) else None
+    if contract is None:
+        return DEFAULT_TOOL_CONTRACT
+    if not isinstance(contract, str) or contract not in REQUIRED_ACTION_KINDS_BY_CONTRACT:
+        return ExportFailure(f"trace tool contract is unsupported: {contract!r}")
+    return contract
+
+
 def _trace_samples(trace: object) -> _TraceConversion | ExportFailure:
     if not isinstance(trace, Mapping):
         return ExportFailure("trace is not an object")
@@ -370,6 +402,9 @@ def _trace_samples(trace: object) -> _TraceConversion | ExportFailure:
     tools = _tools(trace.get("tools"))
     if isinstance(tools, ExportFailure):
         return tools
+    tool_contract = trace_tool_contract(trace)
+    if isinstance(tool_contract, ExportFailure):
+        return tool_contract
 
     target_indices: list[int] = []
     all_target_kinds: set[ActionKind] = set()
@@ -408,7 +443,9 @@ def _trace_samples(trace: object) -> _TraceConversion | ExportFailure:
         final_messages = messages
         final_turn_index = index
     if final_chain is None or final_messages is None or final_turn_index is None:
-        return _TraceConversion(split=split, trace_id=trace_id, samples=())
+        return _TraceConversion(
+            split=split, trace_id=trace_id, tool_contract=tool_contract, samples=()
+        )
     if not set(target_indices).issubset(final_chain):
         return ExportFailure(
             f"successful trace contains branched target turns: {trace_id}"
@@ -422,7 +459,9 @@ def _trace_samples(trace: object) -> _TraceConversion | ExportFailure:
         "messages": final_messages,
         "tools": tools,
     }
-    return _TraceConversion(split=split, trace_id=trace_id, samples=(sample,))
+    return _TraceConversion(
+        split=split, trace_id=trace_id, tool_contract=tool_contract, samples=(sample,)
+    )
 
 
 def _sample_kinds(
@@ -433,7 +472,7 @@ def _sample_kinds(
         return ExportFailure("training sample has no target action kind")
     kinds: list[ActionKind] = []
     for raw_kind in raw_kinds:
-        if raw_kind not in REQUIRED_ACTION_KINDS:
+        if raw_kind not in ALL_ACTION_KINDS:
             return ExportFailure(f"training sample action kind is invalid: {raw_kind}")
         kinds.append(raw_kind)
     return tuple(kinds)
@@ -526,13 +565,17 @@ def export_traces(
     *,
     minimum_train_trajectories: int = MINIMUM_TRAIN_TRAJECTORIES,
     minimum_validation_trajectories: int = MINIMUM_VALIDATION_TRAJECTORIES,
-    required_action_kinds: frozenset[ActionKind] = REQUIRED_ACTION_KINDS,
+    required_action_kinds: frozenset[ActionKind] | None = None,
 ) -> ExportReport | ExportFailure:
-    """Write diverse successful trajectories as bounded MLX chat data."""
+    """Write diverse successful trajectories as bounded MLX chat data.
+
+    `required_action_kinds` defaults to the set the traces' tool contract demands.
+    """
     if minimum_train_trajectories < 1 or minimum_validation_trajectories < 1:
         return ExportFailure("minimum trajectory counts must be positive")
-    if not required_action_kinds:
+    if required_action_kinds is not None and not required_action_kinds:
         return ExportFailure("required action kinds must not be empty")
+    dataset_contract: str | None = None
     trace_files = _trace_files(inputs)
     if isinstance(trace_files, ExportFailure):
         return trace_files
@@ -585,6 +628,16 @@ def export_traces(
                 tests = rewards.get("tests") if isinstance(rewards, Mapping) else None
                 score = tests.get("score") if isinstance(tests, Mapping) else None
                 completed = trace.get("stop_condition") == "agent_completed"
+                tool_contract = trace_tool_contract(trace)
+                if isinstance(tool_contract, ExportFailure):
+                    return tool_contract
+                if dataset_contract is None:
+                    dataset_contract = tool_contract
+                elif tool_contract != dataset_contract:
+                    return ExportFailure(
+                        "trace inputs mix tool contracts: "
+                        f"{dataset_contract} and {tool_contract}"
+                    )
                 if trace.get("ok") is not True or score != 1.0 or not completed:
                     continue
                 converted = _trace_samples(trace)
@@ -619,6 +672,10 @@ def export_traces(
             f"need at least {minimum_validation_trajectories} successful validation "
             f"trajectories, found {valid_trajectories}"
         )
+    if dataset_contract is None:
+        return ExportFailure("trace inputs contain no traces")
+    if required_action_kinds is None:
+        required_action_kinds = REQUIRED_ACTION_KINDS_BY_CONTRACT[dataset_contract]
 
     action_counts: Counter[ActionKind] = Counter()
     for sample in samples_by_split["train"]:
@@ -650,6 +707,7 @@ def export_traces(
         valid_trajectories=valid_trajectories,
         action_counts=action_count_pairs,
         samples_per_trace_limit=1,
+        tool_contract=dataset_contract,
     )
     manifest_failure = _write_dataset_manifest(output_dir, manifest)
     if manifest_failure is not None:
@@ -666,6 +724,7 @@ def export_traces(
         test_samples=len(samples_by_split["holdout"]),
         action_counts=action_count_pairs,
         dataset_sha256=dataset_sha256,
+        tool_contract=dataset_contract,
     )
 
 
@@ -702,6 +761,7 @@ def load_dataset_manifest(data_dir: Path) -> DatasetManifest | TrainingFailure:
     valid_trajectories = raw.get("valid_trajectories")
     samples_per_trace_limit = raw.get("samples_per_trace_limit")
     raw_action_counts = raw.get("action_counts")
+    tool_contract = raw.get("tool_contract", DEFAULT_TOOL_CONTRACT)
     if (
         not isinstance(dataset_sha256, str)
         or not isinstance(train_trajectories, int)
@@ -713,12 +773,14 @@ def load_dataset_manifest(data_dir: Path) -> DatasetManifest | TrainingFailure:
         or not isinstance(raw_action_counts, list)
     ):
         return TrainingFailure("dataset manifest fields are invalid")
+    if tool_contract not in REQUIRED_ACTION_KINDS_BY_CONTRACT:
+        return TrainingFailure("dataset manifest tool contract is invalid")
     action_counts: list[tuple[ActionKind, int]] = []
     for raw_pair in raw_action_counts:
         if (
             not isinstance(raw_pair, list)
             or len(raw_pair) != 2
-            or raw_pair[0] not in REQUIRED_ACTION_KINDS
+            or raw_pair[0] not in ALL_ACTION_KINDS
             or not isinstance(raw_pair[1], int)
             or isinstance(raw_pair[1], bool)
             or raw_pair[1] < 1
@@ -737,6 +799,7 @@ def load_dataset_manifest(data_dir: Path) -> DatasetManifest | TrainingFailure:
         valid_trajectories=valid_trajectories,
         action_counts=tuple(action_counts),
         samples_per_trace_limit=samples_per_trace_limit,
+        tool_contract=tool_contract,
     )
 
 
@@ -842,6 +905,7 @@ def _prepare_training_data(
     output_dir: Path,
     tokenizer: _ChatTokenizer,
     max_sequence_length: int,
+    required_action_kinds: frozenset[ActionKind],
 ) -> _PreparedTrainingData | TrainingFailure:
     counts = {split: 0 for split in DATA_FILES}
     trace_ids_by_split: dict[str, set[str]] = {split: set() for split in DATA_FILES}
@@ -906,7 +970,7 @@ def _prepare_training_data(
         return TrainingFailure(
             "too few validation trajectories fit the maximum sequence length"
         )
-    missing_actions = REQUIRED_ACTION_KINDS.difference(train_action_counts)
+    missing_actions = required_action_kinds.difference(train_action_counts)
     if missing_actions:
         return TrainingFailure(
             f"retained train data lacks required actions: {sorted(missing_actions)}"
@@ -1108,7 +1172,8 @@ def train_adapter(
         available_actions = {
             kind for kind, count in manifest.action_counts if count > 0
         }
-        missing_actions = REQUIRED_ACTION_KINDS.difference(available_actions)
+        required_action_kinds = REQUIRED_ACTION_KINDS_BY_CONTRACT[manifest.tool_contract]
+        missing_actions = required_action_kinds.difference(available_actions)
         if missing_actions:
             return TrainingFailure(
                 f"dataset lacks required actions: {sorted(missing_actions)}"
@@ -1133,6 +1198,7 @@ def train_adapter(
             output_dir=temporary / "prepared",
             tokenizer=tokenizer,
             max_sequence_length=max_sequence_length,
+            required_action_kinds=required_action_kinds,
         )
         if isinstance(prepared, TrainingFailure):
             return prepared

@@ -1,16 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from unittest.mock import patch
 
-from omp_coding import OmpTaskset, OmpTasksetConfig, _capture_process
+from omp_coding.environment import (
+    NATIVE_TOOL_CONTRACT,
+    OmpTaskset,
+    OmpTasksetConfig,
+    _capture_process,
+    _changes_patch,
+    _grade_repository,
+    _harness_document,
+    _task_for_data,
+)
 from omp_coding.evaluation import _fuse_checkpoint
 from omp_coding.metrics import (
     MetricsFailure,
@@ -28,6 +41,13 @@ from omp_coding.protocol import (
     run_protocol_gate,
 )
 from omp_coding.runtime import MAX_COMMAND_OUTPUT_BYTES, RuntimeFailure
+from omp_coding.testcommand import (
+    CHANGES_ARTIFACT,
+    PATCH_PATH,
+    SCRIPT_PATH,
+    SEALED_DIR,
+    START_TAG,
+)
 from omp_coding.training import (
     REQUIRED_ACTION_KINDS,
     DatasetManifest,
@@ -248,6 +268,272 @@ class TasksetTests(unittest.TestCase):
             [task.task_digest for task in second],
         )
         self.assertEqual(len({task.family for task in first}), 6)
+
+
+_V3_IMAGE = "omp-gym/fix-widget:1"
+_V3_SEALED_TEST = "def test_widget():\n    from widget import widget\n    assert widget() == 2\n"
+_V3_PATCH = (
+    b"diff --git a/widget.py b/widget.py\n"
+    b"--- a/widget.py\n+++ b/widget.py\n@@ -1,2 +1,2 @@\n"
+    b" def widget():\n-    return 1\n+    return 2\n"
+)
+
+
+def _write_v3_task(root: Path, *, verifier_timeout: int = 120) -> Path:
+    task_dir = root / "fix-widget"
+    (task_dir / "workspace").mkdir(parents=True)
+    (task_dir / "workspace" / "widget.py").write_text("def widget():\n    return 1\n")
+    sealed = task_dir / "verifier" / "files" / "tests"
+    sealed.mkdir(parents=True)
+    (sealed / "test_widget.py").write_text(_V3_SEALED_TEST)
+    (task_dir / "verifier" / "reference.patch").write_bytes(_V3_PATCH)
+    (task_dir / "Dockerfile").write_text("FROM scratch\n")
+    (task_dir / "task.toml").write_text(
+        "\n".join(
+            (
+                "schema_version = 3",
+                'task_id = "omp-session/fix-widget"',
+                "task_revision = 1",
+                'family = "omp-session"',
+                'split = "train"',
+                'prompt = "Make widget() return 2."',
+                'runtime = "python"',
+                'runtime_version = "3.12"',
+                "max_time_seconds = 600",
+                "token_budget = 200000",
+                "expected_cases = 1",
+                'source = "session:abc"',
+                'source_revision = "deadbeef"',
+                'license = "MIT"',
+                'sensitive_data = "private"',
+                "seed = 7",
+                "",
+                "[environment]",
+                f'image = "{_V3_IMAGE}"',
+                f'image_digest = "sha256:{"0" * 64}"',
+                'os = "linux"',
+                'architecture = "amd64"',
+                'network = "none"',
+                "cpus = 2.0",
+                "memory_bytes = 4294967296",
+                "pids = 1024",
+                "workspace_bytes = 1073741824",
+                "temp_bytes = 268435456",
+                "home_bytes = 268435456",
+                f'dependency_lock_digest = "{"0" * 64}"',
+                "",
+                "[verifier]",
+                'protocol = "test-command-v1"',
+                'command = ["python", "-m", "pytest", "-q", "tests/test_widget.py"]',
+                f"timeout_seconds = {verifier_timeout}",
+                'sealed_files = ["tests/test_widget.py"]',
+                'reference = "verifier/reference.patch"',
+                "",
+            )
+        )
+    )
+    return task_dir
+
+
+def _changes_archive(patch: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as archive:
+        member = tarfile.TarInfo(CHANGES_ARTIFACT.lstrip("/"))
+        member.size = len(patch)
+        archive.addfile(member, io.BytesIO(patch))
+    return buffer.getvalue()
+
+
+@dataclass(frozen=True)
+class _FakeResult:
+    exit_code: int
+    stdout: str = ""
+    stderr: str = ""
+
+
+class _HangingProcess(_FakeProcess):
+    def __init__(self) -> None:
+        super().__init__(_ChunkStream(()), _ChunkStream(()))
+        self._done = asyncio.Event()
+
+    async def wait(self) -> int:
+        await self._done.wait()
+        return -9
+
+    async def kill(self) -> None:
+        self.killed = True
+        self._done.set()
+
+
+class _FakeGradingRuntime(_FakeRuntime):
+    def __init__(self, process: _FakeProcess) -> None:
+        super().__init__(process)
+        self.commands: list[list[str]] = []
+        self.writes: dict[str, bytes] = {}
+        self.routes: list[list[str] | None] = []
+
+    async def prepare_setup(self) -> None:
+        return None
+
+    async def prepare_execution(self, routes: list[str] | None) -> None:
+        self.routes.append(routes)
+
+    async def run(self, argv: list[str], env: Mapping[str, str]) -> _FakeResult:
+        self.commands.append(argv)
+        return _FakeResult(0, stdout="abc123\n")
+
+    async def write(self, path: str, data: bytes) -> None:
+        self.writes[path] = data
+
+    async def open_process(
+        self,
+        command: list[str],
+        environment: Mapping[str, str],
+    ) -> _FakeProcess:
+        self.commands.append(command)
+        return self._process
+
+
+class RepositoryTasksetTests(unittest.TestCase):
+    def test_external_tasks_dir_yields_native_tool_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            _write_v3_task(Path(temporary))
+            taskset = OmpTaskset(OmpTasksetConfig(id="omp-coding", tasks_dir=temporary))
+            tasks = list(taskset)
+
+            self.assertEqual(len(tasks), 1)
+            task = tasks[0]
+            self.assertEqual(task.data.image, _V3_IMAGE)
+            self.assertEqual(task.data.tool_contract, NATIVE_TOOL_CONTRACT)
+            self.assertEqual(task.data.editable_files, ())
+            self.assertEqual(task.data.context_files, ())
+            self.assertEqual(task.data.artifacts, [])
+            self.assertEqual(task.data.tasks_dir, temporary)
+            self.assertEqual(task.data.expected_cases, 1)
+            self.assertEqual(task.data.timeout.agent, 600.0)
+            self.assertGreater(task.data.timeout.scoring, 120.0)
+            self.assertEqual(task.data.resources.cpu, 2.0)
+            self.assertEqual(task.test_command.sealed_files, ("tests/test_widget.py",))
+            self.assertNotIn("editable", task.data.system_prompt or "")
+            self.assertIn("/workspace", task.data.system_prompt or "")
+            with self.assertRaises(RuntimeError):
+                getattr(task, "call_cases_suite")  # noqa: B009
+
+    def test_generated_tasks_cannot_join_an_external_suite(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            _write_v3_task(Path(temporary))
+            config = OmpTasksetConfig(
+                id="omp-coding", tasks_dir=temporary, generated_tasks=2
+            )
+            with self.assertRaises(ValueError):
+                list(OmpTaskset(config))
+
+    def test_task_data_round_trips_through_the_external_suite(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            _write_v3_task(Path(temporary))
+            taskset = OmpTaskset(OmpTasksetConfig(id="omp-coding", tasks_dir=temporary))
+            original = next(iter(taskset))
+
+            rebuilt = _task_for_data(original.data)
+
+            self.assertEqual(rebuilt.data, original.data)
+            self.assertEqual(rebuilt.spec.verifier, original.spec.verifier)
+
+    def test_packaged_tasks_keep_the_host_tool_contract(self) -> None:
+        task = next(iter(OmpTaskset(OmpTasksetConfig(id="omp-coding"))))
+
+        self.assertEqual(task.data.tool_contract, "rpc-host-v1")
+        self.assertIsNone(task.data.tasks_dir)
+        self.assertTrue(task.data.editable_files)
+
+
+class RepositoryGradingTests(unittest.TestCase):
+    def test_changes_patch_is_read_from_the_artifact_archive(self) -> None:
+        artifacts = {"/logs/artifacts": _changes_archive(_V3_PATCH)}
+
+        self.assertEqual(_changes_patch(artifacts), _V3_PATCH)
+        with self.assertRaises(RuntimeError):
+            _changes_patch({"/logs/artifacts": None})
+        with self.assertRaises(RuntimeError):
+            _changes_patch({"/logs/artifacts": _changes_archive(b"")[:10]})
+
+    def test_repository_grade_stages_inputs_and_parses_the_summary(self) -> None:
+        process = _FakeProcess(
+            _ChunkStream((b"=== 1 passed in 0.01s ===\n",)),
+            _ChunkStream(()),
+        )
+        runtime = _FakeGradingRuntime(process)
+
+        @asynccontextmanager
+        async def provision(config: object) -> AsyncIterator[_FakeGradingRuntime]:
+            yield runtime
+
+        with tempfile.TemporaryDirectory() as temporary:
+            _write_v3_task(Path(temporary))
+            task = next(iter(OmpTaskset(OmpTasksetConfig(id="omp-coding", tasks_dir=temporary))))
+            with patch("omp_coding.environment.provision_runtime", provision):
+                graded = asyncio.run(
+                    _grade_repository(
+                        task, {"/logs/artifacts": _changes_archive(_V3_PATCH)}, None
+                    )
+                )
+
+        self.assertEqual(graded.result.status, "passed")
+        self.assertEqual(graded.result.reward, 1.0)
+        self.assertEqual(graded.result.passed_cases, 1)
+        self.assertGreaterEqual(graded.seconds, 0.0)
+        self.assertEqual(runtime.writes[PATCH_PATH], _V3_PATCH)
+        self.assertEqual(
+            runtime.writes[f"{SEALED_DIR}/tests/test_widget.py"],
+            _V3_SEALED_TEST.encode(),
+        )
+        script = runtime.writes[SCRIPT_PATH].decode()
+        self.assertIn(f"apply --binary --whitespace=nowarn {PATCH_PATH}", script)
+        self.assertIn("exec python -m pytest -q tests/test_widget.py", script)
+        self.assertIn(START_TAG, " ".join(runtime.commands[0]))
+        self.assertEqual(runtime.routes, [[]])
+        self.assertEqual(runtime.commands[-1][-2:], ["sh", SCRIPT_PATH])
+
+    def test_repository_grade_maps_a_hung_command_to_a_timeout(self) -> None:
+        runtime = _FakeGradingRuntime(_HangingProcess())
+
+        @asynccontextmanager
+        async def provision(config: object) -> AsyncIterator[_FakeGradingRuntime]:
+            yield runtime
+
+        with tempfile.TemporaryDirectory() as temporary:
+            _write_v3_task(Path(temporary), verifier_timeout=1)
+            task = next(iter(OmpTaskset(OmpTasksetConfig(id="omp-coding", tasks_dir=temporary))))
+            with patch("omp_coding.environment.provision_runtime", provision):
+                graded = asyncio.run(
+                    _grade_repository(
+                        task, {"/logs/artifacts": _changes_archive(_V3_PATCH)}, None
+                    )
+                )
+
+        self.assertEqual(graded.result.status, "timeout")
+        self.assertEqual(graded.result.reward, 0.0)
+        self.assertTrue(runtime._process.killed)
+
+
+class HarnessDocumentTests(unittest.TestCase):
+    def test_host_tool_document_keeps_the_original_keys(self) -> None:
+        document = json.loads(
+            _harness_document("m", "prompt", "system", native_timeout_seconds=None)
+        )
+
+        self.assertEqual(
+            sorted(document),
+            ["executable", "model", "prompt", "provider", "system_prompt"],
+        )
+
+    def test_native_tool_document_carries_mode_and_timeout(self) -> None:
+        document = json.loads(
+            _harness_document("m", "prompt", "system", native_timeout_seconds=600)
+        )
+
+        self.assertEqual(document["tools"], "native")
+        self.assertEqual(document["timeout_seconds"], 600)
 
 
 class VerifierTests(unittest.TestCase):
@@ -957,6 +1243,51 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(report.end_token_rate, 1.0)
         self.assertEqual(report.loop_rate, 0.5)
 
+    def test_native_tool_schemas_validate_calls(self) -> None:
+        from omp_coding.protocol import validate_tool_arguments
+
+        trace = TraceExportTests.native_trace("validation", "native-metrics")
+        schemas = {tool["name"]: tool["parameters"] for tool in trace["tools"]}
+        self.assertIsNone(
+            validate_tool_arguments(
+                schemas["bash"],
+                {"command": "pytest", "i": "Testing", "env": {"CI": "1"}, "timeout": 5},
+            )
+        )
+        self.assertIsNone(
+            validate_tool_arguments(schemas["grep"], {"pattern": "x", "i": "Searching"})
+        )
+        self.assertIsNone(
+            validate_tool_arguments(
+                schemas["grep"], {"pattern": "x", "i": "Searching", "skip": None}
+            )
+        )
+        self.assertIn(
+            "must be one of",
+            validate_tool_arguments(
+                schemas["grep"], {"pattern": "x", "i": "Searching", "skip": "1"}
+            ),
+        )
+        self.assertIn(
+            "must be an object",
+            validate_tool_arguments(
+                schemas["bash"], {"command": "ls", "i": "Listing", "env": "CI=1"}
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            trace_file = Path(temporary) / "traces.jsonl"
+            trace_file.write_text(json.dumps({"traces": [trace]}) + "\n")
+            report = measure_traces([trace_file], parser="native")
+
+        self.assertNotIsInstance(report, MetricsFailure)
+        assert isinstance(report, TraceMetricsReport)
+        self.assertEqual(report.tool_call_attempts, 5)
+        self.assertEqual(report.parsed_tool_call_rate, 1.0)
+        self.assertEqual(report.invalid_tool_rate, 0.0)
+        self.assertEqual(report.unavailable_tool_calls, 0)
+        self.assertEqual(report.loop_rate, 0.0)
+        self.assertEqual(report.sealed_validation_reward, 1.0)
+
 
 class TraceExportTests(unittest.TestCase):
     def test_export_preserves_sampled_turns_and_tool_identity(self) -> None:
@@ -1143,6 +1474,229 @@ class TraceExportTests(unittest.TestCase):
         self.assertIsInstance(result, ExportFailure)
         assert isinstance(result, ExportFailure)
         self.assertIn("validation", result.reason)
+
+    @staticmethod
+    def native_trace(split: str, trace_id: str) -> dict[str, object]:
+        """A trace produced under omp-native-v1: OMP built-in tools, plain-text results."""
+        trace = _trace(split, trace_id)
+        trace["info"] = {"omp_tool_contract": "omp-native-v1", "omp_version": "17.2.15"}
+        string = {"type": "string"}
+        trace["tools"] = [
+            {
+                "name": "read",
+                "description": "Read a file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": string, "i": string},
+                    "required": ["path", "i"],
+                },
+            },
+            {
+                "name": "write",
+                "description": "Write a file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": string, "content": string, "i": string},
+                    "required": ["path", "content", "i"],
+                },
+            },
+            {
+                "name": "edit",
+                "description": "Hashline edit.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"i": string, "input": string},
+                    "required": ["i", "input"],
+                },
+            },
+            {
+                "name": "bash",
+                "description": "Run a command.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": string,
+                        "i": string,
+                        "env": {"type": "object", "additionalProperties": string},
+                        "timeout": {"type": "number"},
+                        "pty": {"type": "boolean"},
+                    },
+                    "required": ["command", "i"],
+                },
+            },
+            {
+                "name": "grep",
+                "description": "Search files.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": string,
+                        "i": string,
+                        "skip": {"type": ["number", "null"]},
+                    },
+                    "required": ["pattern", "i"],
+                },
+            },
+        ]
+        steps = (
+            ("read", {"path": "app.py", "i": "Reading app"}, "1:pass"),
+            ("grep", {"pattern": "def", "i": "Finding defs", "skip": None}, "1:def"),
+            ("write", {"path": "new.py", "content": "x = 1\n", "i": "Writing"}, "ok"),
+            ("edit", {"i": "Editing", "input": "[app.py#1234]\nPUT 1.=1:\n+pass"}, "ok"),
+            ("bash", {"command": "pytest -q", "i": "Testing", "env": {"CI": "1"}}, "1 passed"),
+        )
+        nodes: list[dict[str, object]] = [
+            {"message": {"role": "system", "content": "Use tools. §"}, "sampled": False},
+            {
+                "parent": 0,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Fix it."}],
+                },
+                "sampled": False,
+            },
+        ]
+        calls: list[dict[str, object]] = []
+        for index, (name, arguments, result) in enumerate(steps):
+            nodes.append(
+                {
+                    "parent": len(nodes) - 1,
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": f"call-{index}",
+                                "name": name,
+                                "arguments": json.dumps(arguments),
+                            }
+                        ],
+                    },
+                    "sampled": True,
+                }
+            )
+            nodes.append(
+                {
+                    "parent": len(nodes) - 1,
+                    "message": {
+                        "role": "tool",
+                        "tool_call_id": f"call-{index}",
+                        "content": result,
+                    },
+                    "sampled": False,
+                }
+            )
+            calls.append(
+                {
+                    "finish_reason": "tool_calls",
+                    "sampling": {"temperature": 0.0, "max_tokens": 1024},
+                }
+            )
+        nodes.append(
+            {
+                "parent": len(nodes) - 1,
+                "message": {"role": "assistant", "content": "Done."},
+                "sampled": True,
+            }
+        )
+        calls.append(
+            {
+                "finish_reason": "stop",
+                "sampling": {"temperature": 0.0, "max_tokens": 1024},
+            }
+        )
+        trace["nodes"] = nodes
+        trace["calls"] = calls
+        return trace
+
+    def test_export_accepts_native_tool_traces(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            traces = root / "traces.jsonl"
+            record = {
+                "traces": [
+                    self.native_trace("train", "native-train"),
+                    self.native_trace("validation", "native-valid"),
+                ]
+            }
+            traces.write_text(json.dumps(record) + "\n")
+            output = root / "dataset"
+
+            report = export_traces(
+                [traces],
+                output,
+                minimum_train_trajectories=1,
+                minimum_validation_trajectories=1,
+            )
+
+            self.assertNotIsInstance(report, ExportFailure)
+            assert not isinstance(report, ExportFailure)
+            self.assertEqual(report.tool_contract, "omp-native-v1")
+            self.assertEqual(
+                [kind for kind, _count in report.action_counts],
+                ["edit", "execute", "final", "read", "write"],
+            )
+            manifest = load_dataset_manifest(output)
+            self.assertNotIsInstance(manifest, TrainingFailure)
+            assert isinstance(manifest, DatasetManifest)
+            self.assertEqual(manifest.tool_contract, "omp-native-v1")
+            raw_manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(raw_manifest["tool_contract"], "omp-native-v1")
+            train_row = json.loads((output / "train.jsonl").read_text())
+            self.assertEqual(
+                train_row["target_kinds"], ["edit", "execute", "final", "read", "write"]
+            )
+            self.assertEqual(
+                [tool["function"]["name"] for tool in train_row["tools"]],
+                ["read", "write", "edit", "bash", "grep"],
+            )
+
+    def test_export_rejects_mixed_tool_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            traces = root / "traces.jsonl"
+            record = {
+                "traces": [
+                    self.native_trace("train", "native-train"),
+                    _trace("validation", "rpc-valid"),
+                ]
+            }
+            traces.write_text(json.dumps(record) + "\n")
+
+            result = export_traces(
+                [traces],
+                root / "dataset",
+                minimum_train_trajectories=1,
+                minimum_validation_trajectories=1,
+            )
+
+        self.assertIsInstance(result, ExportFailure)
+        assert isinstance(result, ExportFailure)
+        self.assertIn("mix tool contracts", result.reason)
+
+    def test_export_default_requires_test_and_recovery_for_rpc_host(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            traces = root / "traces.jsonl"
+            record = {
+                "traces": [
+                    _trace("train", "train-one"),
+                    _trace("validation", "valid-one"),
+                ]
+            }
+            traces.write_text(json.dumps(record) + "\n")
+
+            result = export_traces(
+                [traces],
+                root / "dataset",
+                minimum_train_trajectories=1,
+                minimum_validation_trajectories=1,
+            )
+
+        self.assertIsInstance(result, ExportFailure)
+        assert isinstance(result, ExportFailure)
+        self.assertIn("lack actions", result.reason)
+        self.assertIn("test", result.reason)
 
 
 class EvaluationTests(unittest.TestCase):

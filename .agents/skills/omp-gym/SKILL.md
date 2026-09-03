@@ -1,13 +1,55 @@
 ---
 name: omp-gym
-description: Operate the Prime Verifiers v1 OMP coding environment. Use it to run sealed coding evaluations, export exact Prime traces, train MLX LoRA adapters on Apple Metal, and compare an adapter with its fixed baseline.
+description: Operate the Prime Verifiers v1 OMP coding environment. Use it to mint sealed repository tasks from previous OMP sessions, run sealed coding evaluations and model benchmarks, export exact Prime traces, train MLX LoRA adapters on Apple Metal, and compare an adapter with its fixed baseline.
 ---
 
 # omp-gym operator
 
-Use `omp-coding` version `1.1.0`. Use Prime Verifiers v1 for all rollouts. Do
+Use `omp-coding` version `1.2.0`. Use Prime Verifiers v1 for all rollouts. Do
 not use the removed local runner, model shim, ledger, dashboard, or custom RL
 commands.
+
+## Mint tasks from sessions
+
+OMP sessions live under `~/.omp/agent/sessions`. Scan first, then mint:
+
+```sh
+uv run --package omp-coding omp-coding-mint scan
+uv run --package omp-coding omp-coding-mint mint --output tasks/minted
+```
+
+The minter keeps an episode only when the repository still exists on this
+host, a commit matches the pre-edit file contents, and the session recorded a
+test command that failed and then passed after the edits. It builds a Docker
+image per task and proves the reference patch flips the sealed tests. Read
+`mint-report.json` for every rejection reason. Edit a task `Dockerfile` and
+run `omp-coding-mint gate TASK_DIR` to rebuild and regate it. Never publish
+minted tasks: they are `sensitive_data = "private"`.
+
+## Evaluate and benchmark minted tasks
+
+Repository tasks run OMP with its native tools. Pass the task directory, a
+large total token budget, and the policy's real context window:
+
+```sh
+eval omp-coding \
+  --model MODEL_ID \
+  --no-push \
+  --no-rich \
+  --env.taskset.tasks-dir tasks/minted \
+  --env.taskset.split holdout \
+  --env.agent.max-total-tokens 400000 \
+  --env.agent.harness.context-window 200000 \
+  --client.base-url OPENAI_BASE_URL \
+  --client.api-key-var API_KEY_VARIABLE
+```
+
+Rank models with `omp-coding-bench run --models a,b --tasks-dir tasks/minted
+--output bench/NAME` or aggregate existing result directories with
+`omp-coding-bench aggregate RUN_DIR... --tasks-dir tasks/minted --output
+bench/NAME`. Compare runs only when `bench.json` reports one
+`benchmark_digest`. The reference rows come from the sessions' own models and
+are not sealed rewards.
 
 ## Install
 

@@ -1,6 +1,6 @@
 [project]
 name = "omp-coding"
-version = "1.1.0"
+version = "1.2.0"
 description = "Sealed coding tasks driven through OMP on Prime Verifiers v1."
 requires-python = ">=3.11,<3.14"
 readme = "README.md"
@@ -21,6 +21,8 @@ omp-coding-train = "omp_coding.training:main"
 omp-coding-protocol = "omp_coding.protocol:main"
 omp-coding-metrics = "omp_coding.metrics:main"
 omp-coding-evaluate = "omp_coding.evaluation:main"
+omp-coding-mint = "omp_coding.mint:main"
+omp-coding-bench = "omp_coding.bench:main"
 
 [build-system]
 requires = ["hatchling"]
