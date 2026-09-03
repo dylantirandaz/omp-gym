@@ -23,6 +23,7 @@ omp-coding-metrics = "omp_coding.metrics:main"
 omp-coding-evaluate = "omp_coding.evaluation:main"
 omp-coding-mint = "omp_coding.mint:main"
 omp-coding-bench = "omp_coding.bench:main"
+omp-coding-eval = "omp_coding.prime:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -51,6 +51,25 @@ bench/NAME`. Compare runs only when `bench.json` reports one
 `benchmark_digest`. The reference rows come from the sessions' own models and
 are not sealed rewards.
 
+## Prime login and hosted evaluation
+
+Check credentials before any hosted work: `prime whoami` (or
+`PRIME_API_KEY` in the ignored `.env`). If it fails, run `uv tool install
+prime` and `prime login`; never paste a key into a command line. Hosted
+sandboxes and Prime Inference bill the account, so a `Payment required`
+error means the wallet at https://app.primeintellect.ai/dashboard/billing
+needs credits, not that the run is broken.
+
+`omp-coding-eval --hosted` replaces `eval` when Docker is unavailable
+(Windows included): rollouts and grading run in Prime VM sandboxes, `.env`
+is loaded, and the model defaults to Prime Inference with the same key.
+Packaged tasks run directly; minted tasks need `omp-coding-mint publish
+TASK_DIR...` first so Prime holds their images. Keep the same flags,
+task split, rollout count, and model across compared runs. On Windows,
+Defender may quarantine the tunnel client under `~/.prime/bin`; report that
+instead of disabling protection, and offer WSL 2 or a custom tunnel as the
+alternatives.
+
 ## Install
 
 Install the environment in the Prime tool environment. Do not let an active

@@ -41,12 +41,40 @@ Two task kinds share the environment:
 
 - Minting: any host that holds the sessions, with `git` and Docker. The
   minter is standard-library Python and runs on Windows, macOS, and Linux.
-- Evaluation and training: macOS or Linux with Docker (Prime Verifiers does
-  not import on Windows; use WSL 2 with Docker Desktop's WSL integration).
+- Evaluation on Prime's hosted sandboxes: any host after `prime login`,
+  including Windows. No Docker needed.
+- Evaluation with local Docker rollouts and training: macOS or Linux with
+  Docker (on Windows use WSL 2 with Docker Desktop's WSL integration).
 - Python 3.11, 3.12, or 3.13.
-- Prime CLI 0.6.23.
-- One OpenAI-compatible model endpoint.
+- Prime CLI 0.6.23 and a funded Prime Intellect account for hosted sandboxes
+  and Prime Inference.
+- One OpenAI-compatible model endpoint, or Prime Inference through the same
+  Prime login.
 - Apple silicon and MLX for local adapter training and comparison.
+
+## Log in to Prime
+
+One login covers sandboxes, tunnels, image builds, and Prime Inference:
+
+```sh
+uv tool install prime
+prime login          # browser challenge; or: prime config set-api-key
+prime whoami         # shows the account and the key's permissions
+```
+
+`prime login` writes `~/.prime/config.json`. Everything here reads that file,
+and the ignored `.env` at the repository root overrides it:
+
+```sh
+PRIME_API_KEY=        # optional; overrides ~/.prime/config.json
+PRIME_TEAM_ID=        # optional; run under a team
+OPENROUTER_API_KEY=   # only for --client.base-url https://openrouter.ai/api/v1
+```
+
+`omp-coding-eval` and `omp-coding-mint publish` load `.env` automatically;
+the `eval` command needs `set -a; . .env; set +a` first. Sandboxes and
+inference are billed to the account; fund it at
+https://app.primeintellect.ai/dashboard/billing before the first hosted run.
 
 ## Install
 
@@ -132,6 +160,53 @@ OMP with its native tools, and records the workspace patch. A fresh container
 applies the patch, restores the trusted test files, and runs the sealed
 command. The `tests` reward is the fraction of passed cases; a run that
 removes tests, times out, or produces no test summary scores zero.
+
+## Evaluate on Prime without Docker
+
+`omp-coding-eval` wraps the same `eval` command. With `--hosted` every
+rollout and every grading container is a Prime VM sandbox, so no Docker is
+needed on the host, and Windows works: the launcher loads `.env`, exports the
+`prime login` key, defaults the model endpoint to Prime Inference, and adds
+the shims the Verifiers process needs on Windows.
+
+Packaged tasks use a public image and run as they are:
+
+```sh
+uv run --package omp-coding omp-coding-eval --hosted omp-coding \
+  --model openai/gpt-4.1-mini \
+  --no-push \
+  --no-rich \
+  --env.taskset.split validation \
+  --max-concurrent 4
+```
+
+Minted tasks use private images. Publish them once; Prime builds each task
+image from the task directory and the task is rewritten to reference it:
+
+```sh
+uv run --package omp-coding omp-coding-mint publish tasks/minted/*
+uv run --package omp-coding omp-coding-eval --hosted omp-coding \
+  --model openai/gpt-4.1-mini \
+  --no-push \
+  --no-rich \
+  --env.taskset.tasks-dir tasks/minted \
+  --env.taskset.split holdout \
+  --env.agent.max-total-tokens 400000 \
+  --env.agent.harness.context-window 200000
+```
+
+The first hosted run of an image waits for Prime to build its VM image
+(about ten minutes); later runs start in seconds. Pass `--client.base-url`
+and `--client.api-key-var` to use another model endpoint instead of Prime
+Inference. Without `--hosted` the launcher is a plain `eval` with `.env`
+loaded.
+
+On Windows the Verifiers tunnel client is the official `frpc` release, placed
+under `~/.prime/bin` after a checksum check. Windows Defender may quarantine
+it (`Trojan:Win32/Kepavll!rfn` is its usual verdict for frp); either add an
+exclusion for that directory or run your own tunnel and pass
+`--env.interception.type server --env.interception.tunnel.type custom
+--env.interception.tunnel.url URL --env.interception.tunnel.port PORT`.
 
 ## Benchmark models
 

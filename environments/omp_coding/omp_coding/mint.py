@@ -25,6 +25,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import tomllib
@@ -34,6 +35,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from .prime import (
+    DEFAULT_BUILD_TIMEOUT_SECONDS,
+    PublishFailure,
+    login_instructions,
+    prime_credentials,
+    publish_task,
+)
 from .sessions import (
     CommandRun,
     Episode,
@@ -56,6 +64,7 @@ from .task import (
     TaskSpec,
     TestCommandVerifier,
     load_task,
+    render_task_toml,
 )
 from .testcommand import (
     EXCLUDES_FILE,
@@ -861,33 +870,6 @@ def task_name(slug: str, session_id: str, episode_index: int) -> str:
     return f"{slug}-{session_id[:SESSION_ID_PREFIX_LENGTH]}-e{episode_index}"
 
 
-def _toml_value(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return repr(value)
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
-    if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
-    raise TypeError(f"unsupported TOML value: {type(value).__name__}")
-
-
-def render_task_toml(document: Mapping[str, object]) -> str:
-    """Render top-level scalars followed by one level of tables."""
-    scalars = [
-        f"{key} = {_toml_value(value)}"
-        for key, value in document.items()
-        if not isinstance(value, Mapping)
-    ]
-    tables: list[str] = []
-    for key, value in document.items():
-        if isinstance(value, Mapping):
-            tables.append("")
-            tables.append(f"[{key}]")
-            tables.extend(f"{name} = {_toml_value(item)}" for name, item in value.items())
-    return "\n".join([*scalars, *tables, ""])
-
 
 def _task_document(
     *,
@@ -1447,7 +1429,33 @@ def _parser() -> argparse.ArgumentParser:
     gate.add_argument("task_dirs", nargs="+", type=Path)
     gate.add_argument("--timeout-seconds", type=int, default=None)
     gate.add_argument("--keep-failed", action="store_true")
+    publish = subparsers.add_parser(
+        "publish", help="build task images on Prime so hosted sandboxes can run them"
+    )
+    publish.add_argument("task_dirs", nargs="+", type=Path)
+    publish.add_argument(
+        "--platform", choices=("linux/amd64", "linux/arm64"), default="linux/amd64"
+    )
+    publish.add_argument("--timeout-seconds", type=int, default=DEFAULT_BUILD_TIMEOUT_SECONDS)
     return parser
+
+
+def _publish(arguments: argparse.Namespace) -> int:
+    credentials = prime_credentials()
+    if credentials is None:
+        print(login_instructions(), file=sys.stderr)
+        return 2
+    failures = 0
+    for task_dir in arguments.task_dirs:
+        result = publish_task(
+            task_dir,
+            team_id=credentials.team_id,
+            target_platform=arguments.platform,
+            timeout_seconds=arguments.timeout_seconds,
+        )
+        failures += isinstance(result, PublishFailure)
+        print(json.dumps(asdict(result), sort_keys=True))
+    return 1 if failures else 0
 
 
 def _print_decision(decision: EpisodeReport) -> None:
@@ -1472,6 +1480,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = mint_sessions(arguments.sessions, arguments.output, options)
         print(json.dumps(asdict(report), ensure_ascii=False, sort_keys=True))
         return 0 if report.minted or not report.episodes else 1
+    if arguments.command == "publish":
+        return _publish(arguments)
     failures = 0
     for task_dir in arguments.task_dirs:
         result = gate_task(

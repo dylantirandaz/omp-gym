@@ -12,6 +12,7 @@ command pass.
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from collections.abc import Mapping
@@ -213,6 +214,34 @@ def workspace_digest(workspace: Path) -> str:
     if isinstance(inventory, RuntimeFailure):
         raise ValueError(inventory.reason)
     return inventory.digest
+
+
+def _toml_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    raise TypeError(f"unsupported TOML value: {type(value).__name__}")
+
+
+def render_task_toml(document: Mapping[str, object]) -> str:
+    """Render top-level scalars followed by one level of tables."""
+    scalars = [
+        f"{key} = {_toml_value(value)}"
+        for key, value in document.items()
+        if not isinstance(value, Mapping)
+    ]
+    tables: list[str] = []
+    for key, value in document.items():
+        if isinstance(value, Mapping):
+            tables.append("")
+            tables.append(f"[{key}]")
+            tables.extend(f"{name} = {_toml_value(item)}" for name, item in value.items())
+    return "\n".join([*scalars, *tables, ""])
 
 
 def _string_list(value: object) -> tuple[str, ...] | None:

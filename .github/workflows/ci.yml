@@ -86,6 +86,7 @@ jobs:
               "omp_coding/masked_lora.py",
               "omp_coding/metrics.py",
               "omp_coding/mint.py",
+              "omp_coding/prime.py",
               "omp_coding/protocol.py",
               "omp_coding/sessions.py",
               "omp_coding/testcommand.py",

@@ -86,7 +86,7 @@ The result is a Prime v1 `traces.jsonl` file. The `tests` reward is the number
 of passed sealed cases divided by the total case count. An infrastructure
 failure and a token limit failure get reward `0.0`.
 
-## Mint and benchmark
+## Mint, publish, and benchmark
 
 Turn your OMP sessions into repository tasks, then evaluate and rank models on
 them:
@@ -117,6 +117,14 @@ command that failed and then passed. It builds the task image and proves the
 reference patch flips the sealed tests before it keeps the task.
 `omp-coding-bench run` drives `eval` for a list of models and aggregates the
 traces into `bench.md` and `bench.json`.
+
+To run without local Docker, log in with the Prime CLI (`prime login`), then
+use `omp-coding-eval --hosted ...` in place of `eval ...`: rollouts and
+grading run in Prime VM sandboxes, the model defaults to Prime Inference with
+the same key, and `.env` is loaded automatically. Minted tasks first need
+`omp-coding-mint publish TASK_DIR...`, which builds each task image on Prime
+and points `environment.image` at the private `prime/<owner>/<task>:<rev>`
+reference.
 
 ## Train
 
